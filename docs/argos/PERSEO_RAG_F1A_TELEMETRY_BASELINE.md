@@ -39,15 +39,18 @@ Interpretación: la tubería de eventos **no** está muerta; el path de telemetr
 
 ---
 
-## 3. Baseline POST
+## 3. Baseline POST (2026-07-26)
 
 | Campo | Estado |
 |-------|--------|
-| Deploy F1A | **PENDING** — rama reconcile / PR; no medir como LIVE hasta deploy |
+| Deploy F1A | **LIVE** — `main@e1d41b5` Railway prod deploy `03acd69f` |
+| Source branch Railway | **main** (ya no `fix/rag-rq47-quality-hardening`) |
 | Expected signals | `retrieval_turn_classification` y/o `rag_retrieval` con `kpi_version: f1a_1` en turns V3 |
 | `rag_query_logs` | Solo crece cuando rules RAG corre; inventory_only **no** debe inventar logs |
+| Classification since deploy | **0** (sin tráfico inbound aún post-deploy) |
+| Conversation events last | 2026-07-24 (pre-deploy quiet) |
 
-Re-ejecutar SQL post-deploy y actualizar JSON `post` block.
+Re-medir SQL cuando haya turns V3 reales (<24h de tráfico) y actualizar JSON `post` → `LIVE_MEASURED`.
 
 ---
 
@@ -62,6 +65,6 @@ Usar ARGOS para afirmar mix — no tratar `rag_query_logs` quieto como fallo de 
 
 - [x] Root cause documentada  
 - [x] Baseline PRE SQL archivado  
-- [ ] Deploy F1A  
-- [ ] Baseline POST <24h inserts classification  
+- [x] Deploy F1A (`main@e1d41b5`)  
+- [ ] Baseline POST <24h inserts classification (pendiente tráfico)  
 - [ ] KPIs seguridad Anexo M inputs observables
