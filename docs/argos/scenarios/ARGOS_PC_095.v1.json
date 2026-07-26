@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_095",
+  "scenario_version": 1,
+  "priority": "P2",
+  "family": "adversarial",
+  "category": "empty_rag_sql_ok",
+  "title": "Empty RAG + SQL ok",
+  "description": "RAG vacío pero SQL/inventory ok: usar fuente estructurada.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Info de LUX-9500"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "uses_structured_source": true,
+    "no_hallucinated_rag": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "fixture": {
+    "rag_empty": true,
+    "sql_property_ok": true,
+    "property_code": "LUX-9500"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_084",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "multimodal",
+  "category": "audio_ok",
+  "title": "Audio ok",
+  "description": "Audio ok — multimodal F7 gate.",
+  "journey": "mixed",
+  "messages": [
+    {
+      "type": "audio",
+      "transcript": "Busco casa en renta en Cumbres por 25 mil",
+      "confidence": 0.92
+    }
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true
+  },
+  "expected": {
+    "intent": "rent",
+    "known_zone": "Cumbres"
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "tags": [
+    "NOT_RUN_REQUIRES_F2"
+  ],
+  "gate": {
+    "status": "NOT_RUN_REQUIRES_F2",
+    "until_phase": "F7",
+    "reason": "Multimodal runtime requires F7 (audio_ok)"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

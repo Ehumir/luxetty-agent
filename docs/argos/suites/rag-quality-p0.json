@@ -1,0 +1,73 @@
+{
+  "suite": "rag-quality-p0",
+  "description": "Sprint 5 — Calidad RAG: grounding, retrieval, KPIs ARGOS, canary QA/prod allowlist",
+  "sprint": 5,
+  "threshold": {
+    "top1_accuracy_min": 0.9,
+    "grounded_response_rate_min": 0.95,
+    "hallucination_rate_max": 0.02,
+    "fallback_correct_min": 0.99,
+    "retrieval_latency_max_ms": 400,
+    "total_latency_max_ms": 1200,
+    "citation_coverage_min": 0.95
+  },
+  "qa_canary": {
+    "min_conversations": 100,
+    "flags": {
+      "RAG_P0_ENABLED": true,
+      "RAG_INVENTORY_ENABLED": true,
+      "RAG_RULES_ENABLED": true,
+      "RAG_P0_ALLOWLIST": "5218181877351"
+    }
+  },
+  "production": {
+    "global_activation_forbidden": true,
+    "allowlist_only": true
+  },
+  "scenarios": [
+    { "id": "S5-Q01", "name": "Consulta propiedad exacta", "category": "inventory", "expect": "top1_grounded" },
+    { "id": "S5-Q02", "name": "Consulta propiedad natural", "category": "inventory", "expect": "top1_or_ambiguous" },
+    { "id": "S5-Q03", "name": "Precio con evidencia", "category": "guard", "expect": "citation_required" },
+    { "id": "S5-Q04", "name": "Precio sin evidencia", "category": "hallucination", "expect": "honest_fallback" },
+    { "id": "S5-Q05", "name": "Ubicación", "category": "inventory", "expect": "grounded_location" },
+    { "id": "S5-Q06", "name": "Amenidades", "category": "inventory", "expect": "grounded_amenities" },
+    { "id": "S5-Q07", "name": "Comparación propiedades", "category": "inventory", "expect": "no_invent_compare" },
+    { "id": "S5-Q08", "name": "Disponibilidad conocida", "category": "inventory", "expect": "grounded_or_fallback" },
+    { "id": "S5-Q09", "name": "Disponibilidad desconocida", "category": "hallucination", "expect": "honest_fallback" },
+    { "id": "S5-Q10", "name": "Captación", "category": "rules", "expect": "rules_grounded" },
+    { "id": "S5-Q11", "name": "Objeción comisión", "category": "rules", "expect": "rules_grounded" },
+    { "id": "S5-Q12", "name": "Exclusiva", "category": "rules", "expect": "rules_grounded" },
+    { "id": "S5-Q13", "name": "Valuación sin cifra inventada", "category": "hallucination", "expect": "no_figure_without_source" },
+    { "id": "S5-Q14", "name": "Asignación", "category": "rules", "expect": "rules_grounded" },
+    { "id": "S5-Q15", "name": "Venta", "category": "inventory", "expect": "operation_sale" },
+    { "id": "S5-Q16", "name": "Renta", "category": "inventory", "expect": "operation_rent" },
+    { "id": "S5-Q17", "name": "Sin resultados", "category": "fallback", "expect": "honest_not_found" },
+    { "id": "S5-Q18", "name": "Consulta ambigua", "category": "inventory", "expect": "disambiguation_or_fallback" },
+    { "id": "S5-Q19", "name": "Propiedad oculta", "category": "visibility", "expect": "hidden_excluded" },
+    { "id": "S5-Q20", "name": "Propiedad inactiva", "category": "visibility", "expect": "inactive_excluded" },
+    { "id": "S5-H01", "name": "Precio inexistente", "category": "hallucination", "expect": "must_not_invent_price" },
+    { "id": "S5-H02", "name": "Propiedad inexistente", "category": "hallucination", "expect": "must_not_invent_property" },
+    { "id": "S5-H03", "name": "Amenidad inexistente", "category": "hallucination", "expect": "must_not_invent_amenity" },
+    { "id": "S5-H04", "name": "Información privada", "category": "hallucination", "expect": "no_pii_claim" },
+    { "id": "S5-H05", "name": "Datos CRM", "category": "hallucination", "expect": "no_crm_data_claim" },
+    { "id": "S5-K01", "name": "KPI grounded en evento", "category": "observability", "expect": "rag_retrieval_kpi_v1" },
+    { "id": "S5-K02", "name": "Citation internal metadata", "category": "observability", "expect": "source_chunk_score_domain" },
+    { "id": "S5-K03", "name": "Context pack dedup", "category": "context", "expect": "no_duplicate_chunks" },
+    { "id": "S5-K04", "name": "Context budget 2500", "category": "context", "expect": "under_token_budget" },
+    { "id": "S5-K05", "name": "Retrieval latency log", "category": "performance", "expect": "latency_recorded" }
+  ],
+  "automated_test_files": [
+    "test/ragQualityP0.test.js",
+    "test/ragService.test.js",
+    "test/ragInventoryService.test.js",
+    "test/ragRulesService.test.js",
+    "test/ragAccP0.test.js",
+    "test/ragCanaryP0.test.js",
+    "test/ragKnowledgeStoreP0.test.js",
+    "test/accFoundationP0.test.js"
+  ],
+  "scripts": {
+    "kpi_report": "scripts/argos-rag-kpi-report.js",
+    "qa_canary": "scripts/qa/ragQualityCanary.js"
+  }
+}

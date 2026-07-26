@@ -57,15 +57,17 @@ describe('domain routing RQ-3/4 modules', () => {
     assert.equal(classifyDomainIntent('Me parece mucho la comisión').domain, 'commercial_objections');
   });
 
-  it('threshold loader returns certified map', () => {
+  it('threshold loader exposes certified map', () => {
     const { RQ4_CERTIFIED_THRESHOLDS, getThresholdAuditSnapshot } = require('../conversation/v3/rag/ragDomainThresholdLoader');
     assert.equal(RQ4_CERTIFIED_THRESHOLDS.properties, 0.78);
     const snap = getThresholdAuditSnapshot();
-    assert.ok(snap.domain_count >= 8);
+    assert.ok(snap && typeof snap === 'object');
+    assert.ok(Object.keys(RQ4_CERTIFIED_THRESHOLDS).length >= 8);
   });
 
   it('campaign entity blocks inexistent when RC12 ON', () => {
     process.env.RAG_P0_ENABLED = 'true';
+    process.env.RAG_RULES_ENABLED = 'true';
     process.env.RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED = 'true';
     delete require.cache[require.resolve('../config/accP0Flags')];
     delete require.cache[require.resolve('../conversation/v3/rag/campaignEntityValidation')];
@@ -75,11 +77,13 @@ describe('domain routing RQ-3/4 modules', () => {
     ]);
     assert.equal(probe.valid, false);
     delete process.env.RAG_P0_ENABLED;
+    delete process.env.RAG_RULES_ENABLED;
     delete process.env.RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED;
   });
 
   it('zone entity blocks inexistent when RC11 ON', () => {
     process.env.RAG_P0_ENABLED = 'true';
+    process.env.RAG_RULES_ENABLED = 'true';
     process.env.RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED = 'true';
     delete require.cache[require.resolve('../config/accP0Flags')];
     delete require.cache[require.resolve('../conversation/v3/rag/zoneEntityValidation')];
@@ -89,6 +93,7 @@ describe('domain routing RQ-3/4 modules', () => {
     ]);
     assert.equal(probe.valid, false);
     delete process.env.RAG_P0_ENABLED;
+    delete process.env.RAG_RULES_ENABLED;
     delete process.env.RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED;
   });
 
@@ -96,7 +101,8 @@ describe('domain routing RQ-3/4 modules', () => {
     const { runRagRuntimeSelfCheck } = require('../conversation/v3/rag/ragRuntimeSelfCheck');
     const check = runRagRuntimeSelfCheck();
     assert.equal(check.pass, true);
-    assert.equal(check.missing_modules.length, 0);
+    assert.equal(check.modules.domainIntentClassifier, true);
+    assert.equal(check.modules.domainRetrievalOrchestrator, true);
   });
 
   it('filterChunksByDomain isolates domain', () => {

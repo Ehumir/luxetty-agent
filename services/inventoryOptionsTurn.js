@@ -81,22 +81,39 @@ async function resolveInventoryOptionsForTurn({
   });
 
   const zone = slots.locationText;
+  let resolvedZone = zone;
+  // LI light KG: expandir zona canónica antes del SQL (anti-inventar).
+  if (zone && db) {
+    try {
+      const { resolveZoneContext } = require('./zoneContextService');
+      const zc = await resolveZoneContext(db, zone, logger);
+      if (zc.resolved && zc.canonical) {
+        resolvedZone = zc.canonical;
+      }
+    } catch {
+      /* zone KG optional */
+    }
+  }
   const budgetMax = slots.budgetMax;
   const bedrooms = slots.bedrooms;
 
-  // Mínimo: operación + (zona o presupuesto) para no disparar búsquedas vacías genéricas.
-  if (!zone && budgetMax == null) {
-    const asksOptions = /\b(?:opciones?|tienes|tienen|hay|muestrame|muéstrame|mostrar)\b/i.test(
+  // Mínimo: operación + (zona o presupuesto o amenity/open search) para no disparar búsquedas vacías genéricas.
+  if (!resolvedZone && budgetMax == null) {
+    const asksOptions = /\b(?:opciones?|tienes|tienen|hay|muestrame|muéstrame|mostrar|comprar|busco)\b/i.test(
       String(text || '')
     );
-    if (!asksOptions) return null;
+    const amenityOpen =
+      /\b(?:alberca|piscina|jardin|jard[ií]n|amueblad|garage|estacionamiento|roof|rooftop)\b/i.test(
+        String(text || '')
+      );
+    if (!asksOptions && !amenityOpen) return null;
   }
 
   const res = await inventoryOptionsService.searchInventoryOptions(
     db,
     {
       operation,
-      zone,
+      zone: resolvedZone,
       budgetMax,
       bedrooms,
       queryText: text,
@@ -113,7 +130,7 @@ async function resolveInventoryOptionsForTurn({
       attempted: true,
       source: res.source || 'none',
       operation: res.operation || operation,
-      zone: res.zone ?? zone,
+      zone: res.zone ?? resolvedZone,
       budgetMax: res.budgetMax ?? budgetMax,
       bedrooms,
       relaxedZone: !!res.relaxedZone,

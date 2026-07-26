@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_014",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "continuity",
+  "category": "empty_inventory",
+  "title": "Inventory vacío — fallback honesto",
+  "description": "Sin opciones: no inventar propiedades ni precios.",
+  "journey": "renter",
+  "messages": [
+    "Hola",
+    "Busco casa en renta en zona sin inventario",
+    "Presupuesto 8 mil al mes"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "intent": "rent",
+    "honest_empty_inventory": true,
+    "no_fake_options": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "fixture": {
+    "inventory_empty": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

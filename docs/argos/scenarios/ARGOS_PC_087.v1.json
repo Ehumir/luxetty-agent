@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_087",
+  "scenario_version": 1,
+  "priority": "P2",
+  "family": "multimodal",
+  "category": "audio_multi_topic",
+  "title": "Audio multi-topic",
+  "description": "Audio multi-topic — multimodal F7 gate.",
+  "journey": "mixed",
+  "messages": [
+    {
+      "type": "audio",
+      "transcript": "Quiero vender mi casa y también buscar renta en San Pedro",
+      "confidence": 0.9
+    }
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true
+  },
+  "expected": {
+    "multi_topic_ask": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "tags": [
+    "NOT_RUN_REQUIRES_F2"
+  ],
+  "gate": {
+    "status": "NOT_RUN_REQUIRES_F2",
+    "until_phase": "F7",
+    "reason": "Multimodal runtime requires F7 (audio_multi_topic)"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

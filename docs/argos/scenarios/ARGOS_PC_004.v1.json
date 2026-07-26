@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_004",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "continuity",
+  "category": "seller_to_rent_demand",
+  "title": "Seller → rent demand",
+  "description": "Captación inicia; usuario pivota a demanda de renta.",
+  "journey": "mixed",
+  "messages": [
+    "Hola",
+    "Quiero vender mi casa",
+    "Está en Cumbres",
+    "Mejor busco depa en renta en San Pedro",
+    "18 mil al mes"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "intent": "rent",
+    "lead_type": "demand",
+    "operation_type": "rent",
+    "known_zone": "San Pedro"
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_078",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "captation",
+  "category": "no_publish",
+  "title": "No publish incomplete",
+  "description": "No publish incomplete — offer/captation guards.",
+  "journey": "seller",
+  "messages": [
+    "Hola",
+    "Publiquen ya mi casa aunque falten datos"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "refuses_incomplete_publish": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true,
+    "publish_incomplete_listing": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

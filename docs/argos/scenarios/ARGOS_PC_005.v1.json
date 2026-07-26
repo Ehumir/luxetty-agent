@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_005",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "continuity",
+  "category": "two_active_leads",
+  "title": "Dos leads activos — desambiguar",
+  "description": "Requiere topic/lead multi-activo (F2). Debe preguntar cuál, no fusionar.",
+  "journey": "mixed",
+  "messages": [
+    "Hola",
+    "Sigo buscando compra en Cumbres y también la venta de mi casa",
+    "¿Me ayudas con lo de la venta?"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "ask_which_lead": true,
+    "no_auto_merge_leads": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "tags": [
+    "EXPECTED_FAIL_PRE_F2"
+  ],
+  "gate": {
+    "status": "EXPECTED_FAIL_PRE_F2",
+    "until_phase": "F2",
+    "reason": "Multi-lead active disambiguation requires topic/lead lifecycle F2"
+  },
+  "fixture": {
+    "prior_active_leads": 2
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

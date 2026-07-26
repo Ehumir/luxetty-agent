@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_067",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "consent",
+  "category": "preferences_ne_consent",
+  "title": "Preferences ≠ consent",
+  "description": "Preferences ≠ consent — commercial consent matrix.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Prefiero mensajitos",
+    "Busco casa en Cumbres"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "preference_recorded": true,
+    "preference_is_not_consent": true,
+    "crm_ready": false
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

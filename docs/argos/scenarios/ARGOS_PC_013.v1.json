@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_013",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "continuity",
+  "category": "zone_change",
+  "title": "Cambio de zona",
+  "description": "Usuario cambia zona materialmente; actualizar slot o preguntar si ambigüedad.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Busco casa en Cumbres",
+    "Presupuesto 5 millones",
+    "Mejor en Mitras",
+    "Me llamo Diego"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "intent": "buy",
+    "known_zone": "Mitras",
+    "zone_updated": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

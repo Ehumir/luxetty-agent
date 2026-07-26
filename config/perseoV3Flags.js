@@ -100,6 +100,17 @@ function evaluateV3PrimaryGate(input) {
     };
   }
 
+  if (cfg.globalMode) {
+    return {
+      ...base,
+      allowlist_match: true,
+      v3_primary_allowed: true,
+      v3_primary_block_reason: null,
+      v3_primary_bypass_reason: 'global_mode',
+      route: 'v3_primary',
+    };
+  }
+
   if (!cfg.qaAllowlist.length) {
     return {
       ...base,
@@ -177,6 +188,7 @@ function evaluateV3PrimaryGate(input) {
 function getPerseoV3Config() {
   return {
     enabled: process.env.PERSEO_V3_ENABLED === 'true',
+    globalMode: process.env.PERSEO_V3_GLOBAL_MODE === 'true',
     shadowMode: process.env.PERSEO_V3_SHADOW_MODE === 'true',
     handoffEnabled: process.env.PERSEO_V3_HANDOFF_ENABLED === 'true',
     crmDryRun: process.env.PERSEO_V3_CRM_DRY_RUN !== 'false',

@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_039",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "handoff",
+  "category": "abandon_inactivity",
+  "title": "Abandono por inactividad",
+  "description": "Inactividad → PAUSED/CLOSED candidato según política D3.",
+  "journey": "buyer",
+  "messages": [
+    "[inactivity_timeout]"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "inactivity_policy_applied": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "tags": [
+    "EXPECTED_FAIL_PRE_F2"
+  ],
+  "gate": {
+    "status": "EXPECTED_FAIL_PRE_F2",
+    "until_phase": "F2",
+    "reason": "Inactivity abandon policy requires F2"
+  },
+  "fixture": {
+    "last_user_activity_hours": 72
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

@@ -2,8 +2,8 @@
 
 const { isRagInventoryEffectiveForUser } = require('../config/accP0Flags');
 const ragService = require('./ragService');
+const { getMinScoreForDomain } = require('../conversation/v3/rag/ragDomainThresholdLoader');
 const {
-  DEFAULT_MIN_SCORE,
   evaluateRetrieval,
   filterValidChunks,
   isPropertyRowPublishable,
@@ -119,11 +119,11 @@ async function resolveInboundPropertyReference(db, { text, hintZone, canaryPhone
 
   // Código directo: no alterar path — delegar a legacy
   if (extractPropertyCode(looseText)) {
-    return { status: 'fallback_legacy' };
+    return { status: 'fallback_legacy', resolution_path: 'lux_code_bypass', reason: 'lux_code_bypass' };
   }
 
   const start = Date.now();
-  const minScore = DEFAULT_MIN_SCORE;
+  const minScore = getMinScoreForDomain('properties');
   const retrievalQuery = buildInventoryRetrievalQuery(looseText, hintZone);
 
   try {
@@ -154,10 +154,13 @@ async function resolveInboundPropertyReference(db, { text, hintZone, canaryPhone
       latency_ms: search.latency_ms,
       confidence: evalResult.confidence,
       cache_hit: search.cache_hit,
+      embedding_ms: search.embedding_ms ?? null,
+      rpc_ms: search.rpc_ms ?? null,
+      serialization_ms: search.serialization_ms ?? null,
     };
 
     if (evalResult.fallback) {
-      return { status: 'fallback_legacy', rag_meta: ragMeta, reason: 'low_score' };
+      return { status: 'fallback_legacy', rag_meta: ragMeta, reason: 'low_score', resolution_path: 'rag_semantic_low_score' };
     }
 
     if (evalResult.ambiguous) {
@@ -192,7 +195,7 @@ async function resolveInboundPropertyReference(db, { text, hintZone, canaryPhone
       citations: ragService.buildCitationsFromChunks([evalResult.top]),
     });
 
-    return wrapFoundResult(loaded, { matchMethod: 'rag_semantic', ragMeta });
+    return wrapFoundResult(loaded, { matchMethod: 'rag_semantic', ragMeta: { ...ragMeta, resolution_path: 'rag_semantic_found' } });
   } catch (err) {
     logger.warn?.('rag_inventory_resolve_failed', { error: String(err?.message || err) });
     return { status: 'fallback_legacy', reason: 'exception' };

@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_003",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "continuity",
+  "category": "buyer_to_seller_switch",
+  "title": "Buyer → seller switch",
+  "description": "Cambio de intención compra a venta; no inventar lead dual sin política.",
+  "journey": "mixed",
+  "messages": [
+    "Hola",
+    "Busco casa en Cumbres",
+    "Presupuesto 5 millones",
+    "En realidad quiero vender mi depa",
+    "Está en San Pedro"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "intent": "sell",
+    "lead_type": "offer",
+    "role_switch": "buyer_to_seller"
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

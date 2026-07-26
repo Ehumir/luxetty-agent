@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_079",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "multimodal",
+  "category": "image_ok",
+  "title": "Image ok",
+  "description": "Image ok — multimodal F7 gate.",
+  "journey": "mixed",
+  "messages": [
+    "Hola",
+    {
+      "type": "image",
+      "hints": [
+        {
+          "hint": "fachada",
+          "confidence": 0.8
+        }
+      ],
+      "caption": "Así está la fachada"
+    }
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true
+  },
+  "expected": {
+    "media_intake_mode": "image_with_text"
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "tags": [
+    "NOT_RUN_REQUIRES_F2"
+  ],
+  "gate": {
+    "status": "NOT_RUN_REQUIRES_F2",
+    "until_phase": "F7",
+    "reason": "Multimodal runtime requires F7 (image_ok)"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

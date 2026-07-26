@@ -22,12 +22,21 @@ function parseMoneyAmount(text) {
   }
 
   const t = normalizeText(text);
+  // "menos de 50 mil" must win before the millions default on empty unit.
+  const belowMil = t.match(
+    /(?:por\s+)?(?:debajo|menos|menor)\s+(?:de|a)\s+(\d+(?:[.,]\d+)?)\s*(?:mil|miles)\b/
+  );
+  if (belowMil) {
+    const n = Number(belowMil[1].replace(',', '.'));
+    if (Number.isFinite(n) && n > 0 && n < 10_000) return Math.round(n * 1_000);
+  }
   const below = t.match(
     /(?:por\s+)?(?:debajo|menos)\s+de\s+(\d+(?:[.,]\d+)?)\s*(millones|millon|millón|m\b|mdp)?/
   );
   if (below) {
     const n = Number(below[1].replace(',', '.'));
     const unit = below[2] || '';
+    // Empty unit after "menos de N" defaults to millions only when no "mil" nearby.
     if (unit === 'm' || !unit || /millon/.test(unit) || unit === 'mdp') {
       return Math.round(n * 1_000_000);
     }

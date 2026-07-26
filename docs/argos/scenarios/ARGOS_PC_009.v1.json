@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_009",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "continuity",
+  "category": "reopen_decline",
+  "title": "REOPEN — usuario declina",
+  "description": "Usuario declina reabrir; tema permanece CLOSED.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "¿Retomamos lo de Cumbres?",
+    "No, déjalo así"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "topic_reopen": false,
+    "topic_remains_closed": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "tags": [
+    "EXPECTED_FAIL_PRE_F2"
+  ],
+  "gate": {
+    "status": "EXPECTED_FAIL_PRE_F2",
+    "until_phase": "F2",
+    "reason": "REOPEN decline requires F2 topic events"
+  },
+  "fixture": {
+    "topic_lifecycle": "CLOSED",
+    "reopen_prompt": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

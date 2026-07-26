@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-07-23T07:45:00Z",
+  "branch": "chore/reconcile-main-production-perseo-20260722",
+  "pr": 112,
+  "production_ref": "fix/rag-rq47-quality-hardening@ca4cccb",
+  "ca4cccb_is_ancestor_of_pr_head": true,
+  "before": {
+    "argos_runnable": { "pass": 46, "fail": 7, "total": 53 },
+    "verdict": "NO-GO"
+  },
+  "after": {
+    "argos_runnable": { "pass": 53, "fail": 0, "total": 53 },
+    "lint": "PASS",
+    "p0_incident_suite": "10/10",
+    "sticky_rent_matrix_unit": "8/8",
+    "f2_implemented": false
+  },
+  "comparative_note": "ca4cccb is an ancestor of PR112 HEAD. Failures reproduced on PR112 head were V3 sticky/landing/identity defects also present in the production lineage for the ARGOS V3 path; R0 unit tests alone did not catch them. Not a merge-conflict reconciliation regression of RAG files.",
+  "cases": [
+    {
+      "case_id": "ARGOS_PC_001",
+      "severity": "P0",
+      "fixture_intent": "Sticky offer → explicit rent demand break",
+      "messages": [
+        "Hola",
+        "Quiero vender mi casa en Cumbres",
+        "Vale como 8 millones",
+        "Mejor busco casas en renta en Cumbres",
+        "Presupuesto 25 mil al mes"
+      ],
+      "expected": { "intent": "rent", "lead_type": "demand", "operation_type": "rent", "known_zone": "Cumbres" },
+      "before_actual": {
+        "intent": "sell",
+        "lead_flow": "offer",
+        "operation_type": null,
+        "known_zone": "Vale como 8 millones",
+        "parser_turn4": "UNKNOWN/handoff or LOCATION_CAPTURE"
+      },
+      "after_actual": {
+        "intent": "rent",
+        "lead_flow": "demand",
+        "operation_type": "rent",
+        "known_zone": "Cumbres",
+        "known_budget": 25000
+      },
+      "failed_assertions_before": [
+        "expected_intent_mismatch",
+        "expected_lead_type_mismatch",
+        "expected_operation_type_mismatch",
+        "expected_known_zone_mismatch"
+      ],
+      "code_path": [
+        "landingCaptureFlow.tryInterpretLandingCapture",
+        "awaitingFieldCapture.tryResolveAwaitingFieldCapture",
+        "minimalInterpreter early offer→rent",
+        "goalLock.applyGoalOwnership",
+        "stickyContext.enforceStickyContext"
+      ],
+      "result_ca4cccb": "FAIL_EXPECTED_SAME_CLASS (ancestor; V3 landing sticky)",
+      "result_origin_main": "FAIL_OR_WEAKER (main lacked ca4cccb rent sticky R0 fixes; V3 path still broken)",
+      "result_pr112_before_fix": "FAIL",
+      "result_pr112_after_fix": "PASS",
+      "classification": "PREEXISTING_PRODUCTION_DEFECT",
+      "root_cause": "Landing sticky forced SELL in applyGoalOwnership even after explicitFlowSwitch; price phrase stored as zone; awaitingField stole rent message as location; isExplicitFlowSwitchToRentDemand too narrow.",
+      "fix": "Yield landing on demand pivot; price≠zone; broaden rent switch; goalLock respects explicitFlowSwitch + landingCaptureFlow=false; awaiting yields on rent/buy pivots.",
+      "risk": "Low; seller official prevaluación path re-validated via landingCaptureFlow tests.",
+      "permanent_test": "test/stickyOfferRentDemandBreak.test.js"
+    },
+    {
+      "case_id": "ARGOS_PC_004",
+      "severity": "P0",
+      "fixture_intent": "Seller → rent demand",
+      "messages": [
+        "Hola",
+        "Quiero vender mi casa",
+        "Está en Cumbres",
+        "Mejor busco depa en renta en San Pedro",
+        "18 mil al mes"
+      ],
+      "classification": "PREEXISTING_PRODUCTION_DEFECT",
+      "root_cause": "Same class as PC_001 (locked offer + narrow rent switch / sticky).",
+      "result_pr112_after_fix": "PASS",
+      "permanent_test": "test/stickyOfferRentDemandBreak.test.js"
+    },
+    {
+      "case_id": "ARGOS_PC_011",
+      "severity": "P0",
+      "fixture_intent": "Budget correction 5M → 3.5M",
+      "messages": [
+        "Hola",
+        "Busco casa en Cumbres",
+        "Presupuesto 5 millones",
+        "Perdón, en realidad 3.5 millones",
+        "Me llamo Sofía"
+      ],
+      "before_actual": { "known_budget": 5000000, "known_name": "Perdón" },
+      "after_actual": { "known_budget": 3500000, "known_name": "Sofía" },
+      "classification": "PREEXISTING_PRODUCTION_DEFECT",
+      "root_cause": "splitNameAndTail treated 'Perdón, …' as name; identity capture ran before money correction.",
+      "fix": "Harden isLikelyFirstNameOnly / splitNameAndTail / awaiting identity skip on money.",
+      "result_pr112_after_fix": "PASS"
+    },
+    {
+      "case_id": "ARGOS_PC_012",
+      "severity": "P0",
+      "fixture_intent": "Rent → buy switch",
+      "messages": [
+        "Hola",
+        "Busco depa en renta en Cumbres",
+        "20 mil al mes",
+        "Mejor quiero comprar",
+        "Presupuesto 4 millones"
+      ],
+      "before_actual": { "intent": "rent", "operation_type": "rent", "known_name": "Mejor quiero comprar" },
+      "after_actual": { "intent": "buy", "operation_type": "sale" },
+      "classification": "PREEXISTING_PRODUCTION_DEFECT",
+      "root_cause": "Identity accepted intent phrase as name; missing early locked rent→buy switch.",
+      "fix": "Name heuristics + early RENT_PROPERTY→BUY_PROPERTY switch on isExplicitFlowSwitchToBuy.",
+      "result_pr112_after_fix": "PASS"
+    },
+    {
+      "case_id": "ARGOS_PC_017",
+      "severity": "P0",
+      "fixture_intent": "Campaign entity / buy intent",
+      "messages": [
+        "Hola, vi su anuncio",
+        "Me interesa la casa de la campaña de Cumbres",
+        "Presupuesto 6 millones"
+      ],
+      "before_actual": { "intent": null },
+      "after_actual": { "intent": "buy", "lead_flow": "demand" },
+      "classification": "PREEXISTING_PRODUCTION_DEFECT",
+      "root_cause": "Campaign interest phrases not treated as buy demand; 'Hola,…' stolen as name via split.",
+      "fix": "mentionsBuyDemand + splitNameAndTail guards for anuncio/campaña.",
+      "result_pr112_after_fix": "PASS"
+    },
+    {
+      "case_id": "ARGOS_PC_071",
+      "severity": "P1",
+      "fixture_intent": "Captation dossier progress; lead_type offer",
+      "expected": { "intent": "sell", "lead_type": "offer" },
+      "before_actual": { "lead_type_panel": "supply", "lead_flow": "offer" },
+      "classification": "HARNESS_DEFECT",
+      "contract_evidence": "ownershipValidator maps offer→supply; landing bootstrap lead_type supply; OFFER_001 same mismatch.",
+      "fix": "leadTypesEquivalent(offer,supply); prefer snapshot.lead_flow for continuity assertions.",
+      "must_not_checked": [
+        "no ownership claim",
+        "no auto publish",
+        "no price guarantee in must_not"
+      ],
+      "result_pr112_after_fix": "PASS",
+      "note": "Not greenwashed runtime failure; vocabulary alias only."
+    },
+    {
+      "case_id": "ARGOS_PC_098",
+      "severity": "P2",
+      "fixture_intent": "Long thread retain zone/name",
+      "before_actual": { "known_name": "Más cerca de avenida" },
+      "after_actual": { "known_name": "Héctor", "known_zone": "Cumbres" },
+      "classification": "PREEXISTING_PRODUCTION_DEFECT",
+      "root_cause": "isLikelyFirstNameOnly accepted refinement phrases (sigue, cerca de avenida).",
+      "fix": "Name stopwords / intent vocabulary rejection.",
+      "result_pr112_after_fix": "PASS",
+      "f2_dependency": false
+    }
+  ],
+  "files_changed": [
+    "conversation/v3/interpreter/campaignIntake.js",
+    "conversation/v3/interpreter/minimalInterpreter.js",
+    "conversation/v3/interpreter/landingCaptureFlow.js",
+    "conversation/v3/interpreter/awaitingFieldCapture.js",
+    "conversation/v3/interpreter/identityCompoundCapture.js",
+    "conversation/v3/interpreter/nameHeuristics.js",
+    "conversation/v3/interpreter/objectionClassifier.js",
+    "conversation/v3/ownership/goalLock.js",
+    "argos/scenarioRunner.js",
+    "test/stickyOfferRentDemandBreak.test.js"
+  ]
+}

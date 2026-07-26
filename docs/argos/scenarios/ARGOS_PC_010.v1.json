@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_010",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "continuity",
+  "category": "anaphora_la_segunda",
+  "title": "Anáfora “la segunda” / “esa” / “más barata”",
+  "description": "Referencia a opción mostrada; requiere memoria de propiedades en topic (F2).",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Busco casa en Cumbres hasta 5 millones",
+    "Muéstrame opciones",
+    "La segunda me interesa",
+    "¿Esa está disponible?"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "resolves_anaphora": true,
+    "selected_property_ordinal": 2
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "tags": [
+    "EXPECTED_FAIL_PRE_F2"
+  ],
+  "gate": {
+    "status": "EXPECTED_FAIL_PRE_F2",
+    "until_phase": "F2",
+    "reason": "Property list anaphora needs topic_properties F2"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

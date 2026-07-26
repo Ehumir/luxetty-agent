@@ -2,6 +2,16 @@ require('dotenv').config();
 
 'use strict';
 
+try {
+  const { runRagRuntimeSelfCheck } = require('./conversation/v3/rag/ragRuntimeSelfCheck');
+  global.__PERSEO_RAG_RUNTIME_SELF_CHECK__ = runRagRuntimeSelfCheck();
+} catch (bootCheckErr) {
+  global.__PERSEO_RAG_RUNTIME_SELF_CHECK__ = {
+    pass: false,
+    boot_error: String(bootCheckErr?.message || bootCheckErr),
+  };
+}
+
 /**
  * PERSEO — Clean Orchestrator (P0)
  *
@@ -495,12 +505,35 @@ function buildConsultiveFallbackReply({
     });
   }
 
-  if (signals?.lead_flow === 'offer' || t.includes('vender') || t.includes('venta') || t.includes('valu')) {
+  // Escape sticky / oferta: demanda explícita nunca cae al copy de venta.
+  if (r0ContextContinuity.explicitDemandSearchIntent(text)) {
+    const zone = loc || cleanSpaces(String(aiState?.location_text || ''));
+    if (zone) {
+      return hasName
+        ? `Claro, sigo con tu búsqueda en ${zone}. ¿Quieres afinar presupuesto, recámaras o zona más específica?`
+        : `Claro, te ayudo a buscar en ${zone}. Para registrarte bien, ¿me compartes tu nombre? Y dime también tu presupuesto aproximado.`;
+    }
+    return 'Claro, te ayudo con la búsqueda. ¿Buscas renta o compra, y en qué zona?';
+  }
+
+  if (
+    (signals?.lead_flow === 'offer' || t.includes('vender') || t.includes('venta') || t.includes('valu')) &&
+    !/\brentar?\b|\brenta\b|\bcomprar\b|\bbusco\b/.test(t)
+  ) {
     const zoneAsk = loc ? '' : ' Y dime también en qué zona está la propiedad.';
     return `Claro, te puedo orientar con la venta.${zoneAsk}`;
   }
 
-  if ((signals?.lead_flow === 'demand' || t.includes('busco') || t.includes('comprar') || t.includes('rentar')) && loc && !r0ContextContinuity.isR0StickySaleCaptureThread(aiState)) {
+  if (
+    (signals?.lead_flow === 'demand' ||
+      t.includes('busco') ||
+      t.includes('comprar') ||
+      t.includes('rentar') ||
+      t.includes('renta')) &&
+    loc &&
+    (!r0ContextContinuity.isR0StickySaleCaptureThread(aiState) ||
+      r0ContextContinuity.explicitDemandSearchIntent(text))
+  ) {
     const hasBudget = aiState?.budget_max != null && Number.isFinite(Number(aiState.budget_max));
     if (hasBudget) {
       if (hasName) {
@@ -561,20 +594,26 @@ function consultiveFallbackAwaitingFieldPatch(reply, { signals, aiState, text })
   const loc = cleanSpaces(String(signals?.location_text || aiState?.location_text || ''));
   const t = normalizeText(String(text || ''));
   const offerish =
-    flow === 'offer' ||
-    r0ContextContinuity.isR0StickySaleCaptureThread(aiState) ||
-    t.includes('vender') ||
-    t.includes('venta') ||
-    t.includes('valu');
+    !r0ContextContinuity.explicitDemandSearchIntent(text) &&
+    (flow === 'offer' ||
+      r0ContextContinuity.isR0StickySaleCaptureThread(aiState) ||
+      t.includes('vender') ||
+      t.includes('venta') ||
+      t.includes('valu'));
   const patch = {};
-  if (offerish) {
+  if (r0ContextContinuity.explicitDemandSearchIntent(text)) {
+    patch.lead_flow = 'demand';
+    patch.intent_type = 'demand';
+    if (/\brentar?\b|\brenta\b/.test(t)) patch.operation_type = 'rent';
+  } else if (offerish) {
     patch.lead_flow = 'offer';
     patch.intent_type = 'supply';
     if (!signals?.operation_type && !aiState?.operation_type) {
       patch.operation_type = 'sale';
     }
   }
-  if (!offerish) return patch;
+  if (!offerish && !patch.lead_flow) return patch;
+  if (patch.lead_flow === 'demand') return patch;
   if (loc) return patch;
   if (/colonia|municipio|zona.*propiedad|en qué zona|en que zona/i.test(m)) {
     patch.awaiting_field = 'location_text';
@@ -1110,17 +1149,75 @@ app.post('/webhook', async (req, res) => {
         nextAiState.property_context = null;
       }
 
-      if (resolved?.rag_meta && conversationId) {
-        saveConversationEvent(conversationId, 'rag_retrieval', {
-          domain: 'properties',
-          match_method: resolved.match_method || 'rag_semantic',
-          confidence: resolved.rag_meta.confidence ?? null,
-          query_hash: resolved.rag_meta.query_hash || null,
-          latency_ms: resolved.rag_meta.latency_ms ?? null,
-          cache_hit: resolved.rag_meta.cache_hit === true,
-          status: resolved.status,
-          fallback_used: false,
-        });
+      if (resolved?.rag_meta || resolved?.resolution_path) {
+        const { buildRagRetrievalKpi } = require('./conversation/v3/rag/ragKpi');
+        const { getMinScoreForDomain } = require('./conversation/v3/rag/ragDomainThresholdLoader');
+        const { isRagRc11TelemetryEnabled, isRagInventoryEffectiveForUser } = require('./config/accP0Flags');
+        const shouldEmit =
+          resolved.rag_meta ||
+          resolved.resolution_path ||
+          (isRagRc11TelemetryEnabled() && isRagInventoryEffectiveForUser(from));
+
+        if (shouldEmit) {
+          const inventoryFound = resolved.status === 'found';
+          const ragMeta = resolved.rag_meta || {};
+          const topScore = Number(ragMeta.confidence ?? 0);
+          const minThreshold = getMinScoreForDomain('properties');
+          const contextPack = {
+            confidence: topScore,
+            fallback_used: !inventoryFound,
+            citations: inventoryFound ? [{ score: topScore, registry_domain_code: 'properties' }] : [],
+            latency_ms: ragMeta.latency_ms ?? 0,
+            scores: {
+              top_score: topScore,
+              min_score_threshold: minThreshold,
+            },
+          };
+          saveConversationEvent(
+            conversationId,
+            'rag_retrieval',
+            buildRagRetrievalKpi(contextPack, {
+              domain: 'properties',
+              message_id: metaMessageId || null,
+              conversation_id: conversationId,
+              request_id: metaMessageId || null,
+              match_method: resolved.match_method || resolved.resolution_path || 'inventory',
+              inventory_path: resolved.resolution_path || resolved.match_method || 'unknown',
+              query_hash: ragMeta.query_hash || null,
+              cache_hit: ragMeta.cache_hit === true,
+              status: resolved.status,
+              fallback_reason: inventoryFound ? null : resolved.reason || resolved.resolution_path || 'inventory_fallback',
+              embedding_ms: ragMeta.embedding_ms ?? null,
+              rpc_ms: ragMeta.rpc_ms ?? null,
+              serialization_ms: ragMeta.serialization_ms ?? null,
+              retrieval_ms: ragMeta.latency_ms ?? null,
+              pipeline: 'inventory_resolution',
+              telemetry_rc11: isRagRc11TelemetryEnabled(),
+              min_score_threshold: minThreshold,
+            })
+          );
+        }
+      } else if (conversationId) {
+        const { isRagRc11TelemetryEnabled, isRagInventoryEffectiveForUser } = require('./config/accP0Flags');
+        if (isRagRc11TelemetryEnabled() && isRagInventoryEffectiveForUser(from) && shouldResolveProperty) {
+          const { buildRagRetrievalKpi } = require('./conversation/v3/rag/ragKpi');
+          saveConversationEvent(
+            conversationId,
+            'rag_retrieval',
+            buildRagRetrievalKpi(null, {
+              domain: 'properties',
+              message_id: metaMessageId || null,
+              conversation_id: conversationId,
+              request_id: metaMessageId || null,
+              fallback_used: true,
+              skipped: true,
+              inventory_path: resolved?.resolution_path || 'legacy_resolution',
+              status: resolved?.status || 'unknown',
+              pipeline: 'inventory_resolution',
+              telemetry_rc11: true,
+            })
+          );
+        }
       }
     }
 
@@ -1250,6 +1347,8 @@ app.post('/webhook', async (req, res) => {
         }
       }
 
+      let ragTurnMeta = null;
+      let inventorySearchMetaForClass = null;
       try {
         const { enrichTurnWithRagContext } = require('./conversation/v3/rag/ragTurnOrchestrator');
         const ragTurn = await enrichTurnWithRagContext(supabase, {
@@ -1260,6 +1359,7 @@ app.post('/webhook', async (req, res) => {
           saveConversationEvent,
           logger: console,
         });
+        ragTurnMeta = ragTurn?.meta || null;
         if (ragTurn?.contextPack) {
           legacyHydration.ragContextPack = ragTurn.contextPack;
         }
@@ -1267,8 +1367,6 @@ app.post('/webhook', async (req, res) => {
           logEvent('rag_turn_context', {
             conversation_id: conversationId,
             domain: ragTurn.meta.domain,
-            domain_selected: ragTurn.meta.domain_selected,
-            domain_filter_applied: ragTurn.meta.domain_filter_applied,
             confidence: ragTurn.meta.confidence,
             citations_count: ragTurn.meta.citations_count,
             fallback_used: ragTurn.meta.fallback_used,
@@ -1276,6 +1374,7 @@ app.post('/webhook', async (req, res) => {
           });
         }
       } catch (ragErr) {
+        ragTurnMeta = { skipped: false, fallback_reason: 'exception', allowlist_eligible: true };
         logEvent('rag_turn_context_error', {
           conversation_id: conversationId,
           error: String(ragErr?.message || ragErr),
@@ -1288,24 +1387,112 @@ app.post('/webhook', async (req, res) => {
           db: supabase,
           text,
           phone: from,
-          previousAiState,
+          previousAiState: { ...previousAiState, ...nextAiState },
           logger: console,
         });
         if (inv) {
           legacyHydration.matchedOptions = inv.matchedOptions || [];
           legacyHydration.inventorySearchMeta = inv.inventorySearchMeta || null;
+          inventorySearchMetaForClass = {
+            ...(inv.inventorySearchMeta || {}),
+            count: (inv.matchedOptions || []).length,
+          };
           logEvent('inventory_options_search', {
             conversation_id: conversationId,
             count: (inv.matchedOptions || []).length,
-            source: inv.inventorySearchMeta?.source || null,
-            operation: inv.inventorySearchMeta?.operation || null,
+            source: inv.inventorySearchMeta?.source,
             empty: !!inv.inventorySearchMeta?.emptyAfterSearch,
+            operation: inv.inventorySearchMeta?.operation,
+            zone: inv.inventorySearchMeta?.zone,
           });
         }
       } catch (invErr) {
         logEvent('inventory_options_search_error', {
           conversation_id: conversationId,
           error: String(invErr?.message || invErr),
+        });
+      }
+
+      // F1A: clasificación de turno (no inserta rag_query_logs falsos).
+      try {
+        const {
+          classifyRetrievalTurn,
+          buildRetrievalClassificationPayload,
+        } = require('./conversation/v3/rag/retrievalTurnClassification');
+        const classification = classifyRetrievalTurn({
+          ragMeta: ragTurnMeta,
+          inventoryMeta: inventorySearchMetaForClass,
+          hasActiveProperty: !!(legacyHydration.activeProperty && legacyHydration.activeProperty.id),
+        });
+        const classPayload = buildRetrievalClassificationPayload({
+          classification,
+          ragMeta: ragTurnMeta,
+          inventoryMeta: inventorySearchMetaForClass,
+          messageId: metaMessageId,
+        });
+        logEvent('retrieval_turn_classification', {
+          conversation_id: conversationId,
+          ...classPayload,
+        });
+        if (typeof saveConversationEvent === 'function' && conversationId) {
+          await saveConversationEvent(conversationId, 'retrieval_turn_classification', classPayload);
+        }
+      } catch (classErr) {
+        logEvent('retrieval_turn_classification_error', {
+          conversation_id: conversationId,
+          error: String(classErr?.message || classErr),
+        });
+      }
+
+      try {
+        const ap = legacyHydration.activeProperty;
+        const wantsCompare = /\b(compar|similar|parecid|otras?\s+opciones?)\b/i.test(String(text || ''));
+        if (ap?.id && wantsCompare) {
+          const { findComparables } = require('./services/comparablesService');
+          const cmp = await findComparables(supabase, { activeProperty: ap, limit: 3 }, console);
+          if (cmp.options?.length) {
+            legacyHydration.matchedComparables = cmp.options;
+          }
+        }
+      } catch (cmpErr) {
+        logEvent('comparables_search_error', {
+          conversation_id: conversationId,
+          error: String(cmpErr?.message || cmpErr),
+        });
+      }
+
+      try {
+        const {
+          runConsultiveTools,
+          isConsultiveToolsEffectiveForUser,
+        } = require('./conversation/v3/planner/consultiveToolsPlanner');
+        if (isConsultiveToolsEffectiveForUser(from)) {
+          const toolsOut = await runConsultiveTools({
+            db: supabase,
+            text,
+            phone: from,
+            state: {
+              activeProperty: legacyHydration.activeProperty,
+              locationText: previousAiState?.location_text || nextAiState?.location_text,
+              ragContextPack: legacyHydration.ragContextPack,
+            },
+            logger: console,
+          });
+          if (toolsOut.toolsCalled.length) {
+            legacyHydration.consultiveTools = toolsOut;
+            if (toolsOut.results.get_comparables?.options) {
+              legacyHydration.matchedComparables = toolsOut.results.get_comparables.options;
+            }
+            logEvent('consultive_tools', {
+              conversation_id: conversationId,
+              tools: toolsOut.toolsCalled,
+            });
+          }
+        }
+      } catch (toolErr) {
+        logEvent('consultive_tools_error', {
+          conversation_id: conversationId,
+          error: String(toolErr?.message || toolErr),
         });
       }
 

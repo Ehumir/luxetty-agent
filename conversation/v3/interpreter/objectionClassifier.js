@@ -8,6 +8,8 @@ const { isSellValuationUnknownRequest } = require('./sellValuationSignals');
 
 function isSaleUrgencyEmotional(text) {
   const t = normalizeText(String(text || ''));
+  // "Ya te dije que renta" es corrección de operación, no urgencia de venta.
+  if (/\bya\s+te\s+dije\b/.test(t) || /\bte\s+dije\s+que\b/.test(t)) return false;
   const urgent =
     /\b(?:urgente|urgencia|r[aá]pido|pronto|ya|inmediat|lo antes posible)\b/.test(t) ||
     /\b(?:preocupad|ansios|estresad|nervios|angustiad)\w*\b/.test(t);

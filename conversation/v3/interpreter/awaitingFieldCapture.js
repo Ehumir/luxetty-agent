@@ -1,7 +1,5 @@
 'use strict';
 
-const { normalizeText, cleanSpaces } = require('../../../utils/text');
-const { V3_INTENT } = require('../types/constants');
 const { parseMoneyAmount } = require('./moneyParser');
 const { tryParseQualificationLocation } = require('./sellLocationCapture');
 const { normalizeLocationFromUserText, isBareKnownZoneToken } = require('./locationNormalizer');
@@ -11,6 +9,13 @@ const { isLikelyFirstNameOnly, parseChannelPreference } = require('./identityCom
 const { parseAdvisorContactConsent } = require('../planner/consentParser');
 const { parseOccupancyStatus } = require('./occupancyParser');
 const { isSlotFilled } = require('../state/slotFillState');
+const {
+  mentionsRentDemand,
+  mentionsBuyDemand,
+  isExplicitFlowSwitchToRentDemand,
+} = require('./campaignIntake');
+const { normalizeText, cleanSpaces } = require('../../../utils/text');
+const { V3_INTENT } = require('../types/constants');
 
 /**
  * Campo que el asistente está esperando (prioridad sobre reclasificación de intención).
@@ -24,6 +29,16 @@ function resolveActiveAwaitingField(state) {
 
 function tryCapturePendingIdentity(state, raw, patch, decision) {
   if (state.collectedFields?.fullName) return null;
+
+  const t = normalizeText(raw);
+  if (parseMoneyAmount(raw) != null) return null;
+  if (
+    isExplicitFlowSwitchToRentDemand(raw) ||
+    mentionsBuyDemand(t) ||
+    (mentionsRentDemand(t) && !/\brentar\s+mi\b/.test(t))
+  ) {
+    return null;
+  }
 
   const affName = extractAffirmationName(raw);
   if (affName && isLikelyFirstNameOnly(affName)) {
@@ -74,6 +89,16 @@ function tryCapturePendingIdentity(state, raw, patch, decision) {
 function tryResolveAwaitingFieldCapture(state, raw, text, patch, decision) {
   const field = resolveActiveAwaitingField(state);
   if (!field || !state.conversationGoalLocked) return null;
+
+  const t = normalizeText(raw);
+  // Demanda / pivotes explícitos no se interpretan como respuesta al slot pendiente.
+  if (
+    isExplicitFlowSwitchToRentDemand(raw) ||
+    mentionsBuyDemand(t) ||
+    (mentionsRentDemand(t) && !/\brentar\s+mi\b/.test(t))
+  ) {
+    return null;
+  }
 
   if (
     !state.locationText &&

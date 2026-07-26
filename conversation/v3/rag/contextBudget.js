@@ -27,12 +27,40 @@ function chunkTokens(chunk) {
 }
 
 /**
+ * Elimina chunks duplicados por chunk_id o prefijo de contenido (Sprint 5).
+ */
+function deduplicateChunks(chunks = []) {
+  const list = Array.isArray(chunks) ? chunks : [];
+  const seenIds = new Set();
+  const seenContent = new Set();
+  const out = [];
+  for (const chunk of list) {
+    const id = chunk?.chunk_id || chunk?.id;
+    if (id) {
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+      out.push(chunk);
+      continue;
+    }
+    const prefix = String(chunk?.content || '').slice(0, 120).trim().toLowerCase();
+    if (!prefix) {
+      out.push(chunk);
+      continue;
+    }
+    if (seenContent.has(prefix)) continue;
+    seenContent.add(prefix);
+    out.push(chunk);
+  }
+  return out;
+}
+
+/**
  * Aplica presupuesto de contexto. Nunca elimina reglas críticas si caben.
  * @param {Array<object>} chunks
  * @returns {{ selected: object[], dropped: object[], context_tokens_estimated: number, chunks_selected: number, chunks_dropped: number }}
  */
 function applyContextBudget(chunks = []) {
-  const list = Array.isArray(chunks) ? [...chunks] : [];
+  const list = deduplicateChunks(Array.isArray(chunks) ? chunks : []);
   const sorted = list.sort((a, b) => {
     const pa = DOMAIN_PRIORITY.findIndex((d) => d.match(a));
     const pb = DOMAIN_PRIORITY.findIndex((d) => d.match(b));
@@ -77,5 +105,6 @@ module.exports = {
   MAX_CONTEXT_TOKENS,
   DOMAIN_PRIORITY,
   estimateTokens,
+  deduplicateChunks,
   applyContextBudget,
 };

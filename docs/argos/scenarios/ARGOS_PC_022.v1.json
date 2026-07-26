@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_022",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "ownership",
+  "category": "new_contact_property",
+  "title": "Contacto nuevo × propiedad",
+  "description": "Contacto nuevo con interés en propiedad; assignment por política, no por topic.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Vi la LUX-3010",
+    "Quiero que me contacten"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "property_interest": true,
+    "assignment_via_policy": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "fixture": {
+    "contact_exists": false,
+    "property_code": "LUX-3010"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

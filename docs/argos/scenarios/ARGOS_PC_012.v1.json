@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_012",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "continuity",
+  "category": "rent_to_buy",
+  "title": "Renta → compra",
+  "description": "Cambio de operación renta a compra; confirmar política de nuevo topic/lead.",
+  "journey": "mixed",
+  "messages": [
+    "Hola",
+    "Busco depa en renta en Cumbres",
+    "20 mil al mes",
+    "Mejor quiero comprar",
+    "Presupuesto 4 millones"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "intent": "buy",
+    "lead_type": "demand",
+    "operation_type": "sale",
+    "rent_to_buy_switch": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

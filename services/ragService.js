@@ -92,12 +92,15 @@ async function semanticSearch(db, { query, rpcName, rpcParams = {}, logger = con
   }
 
   try {
+    const embedStart = Date.now();
     const { embedding, cache_hit } = await withTimeout(
       getQueryEmbedding(q, queryHash),
       timeoutMs,
       'embedding'
     );
+    const embedding_ms = Date.now() - embedStart;
 
+    const rpcStart = Date.now();
     let data;
     let error;
     try {
@@ -123,6 +126,8 @@ async function semanticSearch(db, { query, rpcName, rpcParams = {}, logger = con
         throw hybridErr;
       }
     }
+    const rpc_ms = Date.now() - rpcStart;
+    const serialization_ms = 0;
 
     if (error) {
       if (effectiveRpc === 'match_knowledge_chunks_hybrid') {
@@ -134,7 +139,16 @@ async function semanticSearch(db, { query, rpcName, rpcParams = {}, logger = con
         );
         if (res.error) {
           logger.warn?.('rag_semantic_search_rpc_error', { rpc: rpcName, message: res.error.message });
-          return { chunks: [], fallback: true, latency_ms: Date.now() - start, query_hash: queryHash, cache_hit };
+          return {
+            chunks: [],
+            fallback: true,
+            latency_ms: Date.now() - start,
+            query_hash: queryHash,
+            cache_hit,
+            embedding_ms,
+            rpc_ms,
+            serialization_ms,
+          };
         }
         return {
           chunks: Array.isArray(res.data) ? res.data : [],
@@ -142,12 +156,24 @@ async function semanticSearch(db, { query, rpcName, rpcParams = {}, logger = con
           latency_ms: Date.now() - start,
           query_hash: queryHash,
           cache_hit,
+          embedding_ms,
+          rpc_ms,
+          serialization_ms,
           hybrid: false,
           hybrid_fallback: true,
         };
       }
       logger.warn?.('rag_semantic_search_rpc_error', { rpc: rpcName, message: error.message });
-      return { chunks: [], fallback: true, latency_ms: Date.now() - start, query_hash: queryHash, cache_hit };
+      return {
+        chunks: [],
+        fallback: true,
+        latency_ms: Date.now() - start,
+        query_hash: queryHash,
+        cache_hit,
+        embedding_ms,
+        rpc_ms,
+        serialization_ms,
+      };
     }
 
     return {
@@ -156,11 +182,22 @@ async function semanticSearch(db, { query, rpcName, rpcParams = {}, logger = con
       latency_ms: Date.now() - start,
       query_hash: queryHash,
       cache_hit,
+      embedding_ms,
+      rpc_ms,
+      serialization_ms,
       hybrid: effectiveRpc === 'match_knowledge_chunks_hybrid',
     };
   } catch (err) {
     logger.warn?.('rag_semantic_search_failed', { rpc: rpcName, error: String(err?.message || err) });
-    return { chunks: [], fallback: true, latency_ms: Date.now() - start, query_hash: queryHash };
+    return {
+      chunks: [],
+      fallback: true,
+      latency_ms: Date.now() - start,
+      query_hash: queryHash,
+      embedding_ms: null,
+      rpc_ms: null,
+      serialization_ms: null,
+    };
   }
 }
 
@@ -186,11 +223,11 @@ function buildContext(chunks = []) {
 }
 
 function buildCitationsFromChunks(chunks = []) {
-  return chunks.map((c, idx) => ({
+  return chunks.map((c) => ({
     source_type: c.source_type,
     source_id: c.source_id,
     chunk_id: c.chunk_id || c.id,
-    rank: idx + 1,
+    registry_domain_code: c.registry_domain_code || c.metadata?.registry_domain_code || null,
     score: Number(c.similarity ?? c.score ?? 0),
     excerpt: String(c.content || '').slice(0, 200),
   }));
@@ -272,7 +309,16 @@ async function persistRagQueryLog(db, {
       .select('id')
       .maybeSingle();
 
-    if (logErr || !logRow?.id) return null;
+    if (logErr || !logRow?.id) {
+      // F1A: no silenciar fallos de insert (RLS/schema/credenciales).
+      if (typeof console !== 'undefined') {
+        console.warn('persistRagQueryLog_failed', {
+          error: logErr?.message || logErr || 'no_row',
+          code: logErr?.code || null,
+        });
+      }
+      return null;
+    }
 
     if (citations.length) {
       const rows = citations.map((c, idx) => ({
@@ -284,7 +330,10 @@ async function persistRagQueryLog(db, {
       await db.from('retrieval_citations').insert(rows);
     }
     return logRow.id;
-  } catch {
+  } catch (err) {
+    if (typeof console !== 'undefined') {
+      console.warn('persistRagQueryLog_exception', { error: String(err?.message || err) });
+    }
     return null;
   }
 }
@@ -292,7 +341,18 @@ async function persistRagQueryLog(db, {
 /**
  * Orquestación completa con timeout global y fallback.
  */
-async function retrieveContextPack(db, { query, rpcName, rpcParams, logger = console, minScore = DEFAULT_MIN_SCORE }) {
+async function retrieveContextPack(
+  db,
+  {
+    query,
+    rpcName,
+    rpcParams,
+    logger = console,
+    minScore = DEFAULT_MIN_SCORE,
+    registryDomainFilter = null,
+    allowedDomains = null,
+  } = {}
+) {
   const start = Date.now();
   if (!isRagP0Enabled()) {
     return { contextPack: createContextPack({ fallback_used: true }), fallback: true };
@@ -310,7 +370,19 @@ async function retrieveContextPack(db, { query, rpcName, rpcParams, logger = con
       return { contextPack: pack, fallback: true };
     }
 
-    const candidates = selectCandidates(search.chunks);
+    let scopedChunks = search.chunks;
+    if (registryDomainFilter) {
+      scopedChunks = scopedChunks.filter((c) => c.registry_domain_code === registryDomainFilter);
+    } else if (Array.isArray(allowedDomains) && allowedDomains.length) {
+      scopedChunks = scopedChunks.filter((c) => allowedDomains.includes(c.registry_domain_code));
+    }
+
+    if (!scopedChunks.length) {
+      const pack = createContextPack({ fallback_used: true, latency_ms: Date.now() - start });
+      return { contextPack: pack, fallback: true, cross_domain_empty: true };
+    }
+
+    const candidates = selectCandidates(scopedChunks);
     const thresholded = applyThresholds(candidates, { minScore });
     const evalResult = evaluateRetrieval(thresholded, { minScore });
 
@@ -355,6 +427,8 @@ module.exports = {
   RAG_RETRIEVAL_BUDGET_MS,
   getRagRpcMinScore,
   sha256,
+  embedQuery,
+  getQueryEmbedding,
   semanticSearch,
   buildContext,
   selectCandidates,
@@ -364,5 +438,6 @@ module.exports = {
   persistRagQueryLog,
   retrieveContextPack,
   buildCitationsFromChunks,
+  getQueryEmbedding,
   _clearEmbeddingCacheForTests: () => embeddingCache.clear(),
 };

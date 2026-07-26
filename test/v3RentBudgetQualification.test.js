@@ -32,6 +32,10 @@ describe('moneyParser — rent budget MX formats', () => {
     ['presupuesto 25 mil', 25_000],
     ['renta mensual 25 mil', 25_000],
     ['presupuesto 8 millones', 8_000_000],
+    ['menos de 50 mil', 50_000],
+    ['debajo de 25 mil pesos', 25_000],
+    ['menor a 50 mil', 50_000],
+    ['menos de 5 millones', 5_000_000],
   ]) {
     it(`parseMoneyAmount("${input}") => ${expected}`, () => {
       assert.equal(parseMoneyAmount(input), expected);

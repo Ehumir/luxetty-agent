@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_034",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "handoff",
+  "category": "handoff_expired_no_response",
+  "title": "No response → EXPIRED",
+  "description": "SLA asesor sin respuesta: EXPIRED; mensaje degradado, no fingir humano.",
+  "journey": "buyer",
+  "messages": [
+    "[sla_timeout_no_advisor]"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "handoff_state": "EXPIRED",
+    "no_fake_human": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "tags": [
+    "EXPECTED_FAIL_PRE_F2"
+  ],
+  "gate": {
+    "status": "EXPECTED_FAIL_PRE_F2",
+    "until_phase": "F2",
+    "reason": "Handoff EXPIRED SLA requires F2"
+  },
+  "fixture": {
+    "handoff_state": "REQUESTED"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

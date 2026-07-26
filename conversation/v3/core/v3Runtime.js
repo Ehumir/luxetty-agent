@@ -164,8 +164,35 @@ function processV3Turn(input) {
     if (Array.isArray(h.matchedOptions)) {
       hyd.matchedOptions = h.matchedOptions;
     }
+    if (Array.isArray(h.matchedComparables)) {
+      hyd.matchedComparables = h.matchedComparables;
+    }
+    if (h.zoneContext && typeof h.zoneContext === 'object') {
+      hyd.zoneContext = h.zoneContext;
+    }
+    if (h.consultiveTools && typeof h.consultiveTools === 'object') {
+      hyd.consultiveTools = h.consultiveTools;
+    }
     if (h.inventorySearchMeta && typeof h.inventorySearchMeta === 'object') {
       hyd.inventorySearchMeta = h.inventorySearchMeta;
+      const meta = h.inventorySearchMeta;
+      if (meta.attempted) {
+        hyd.leadFlow = 'demand';
+        if (meta.operation === 'rent') {
+          hyd.operationType = 'rent';
+          hyd.conversationGoal = 'RENT_PROPERTY';
+        } else if (meta.operation === 'sale') {
+          hyd.operationType = 'sale';
+          hyd.conversationGoal = 'BUY_PROPERTY';
+        }
+        if (meta.zone) hyd.locationText = String(meta.zone).trim();
+        if (meta.budgetMax != null && Number.isFinite(Number(meta.budgetMax))) {
+          hyd.budget = Number(meta.budgetMax);
+        }
+        if (meta.bedrooms != null && Number.isFinite(Number(meta.bedrooms))) {
+          hyd.bedrooms = Number(meta.bedrooms);
+        }
+      }
     }
     if (!Object.keys(hyd).length) return base;
     return mergeConversationState(base, hyd);

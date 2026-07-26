@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_064",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "consent",
+  "category": "consent_withdraw",
+  "title": "Consent withdraw",
+  "description": "Consent withdraw — commercial consent matrix.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Antes dije que sí me contactaran",
+    "Retiro mi consentimiento"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "consent_withdrawn": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true,
+    "contact_after_withdraw": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

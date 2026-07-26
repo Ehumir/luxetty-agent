@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_043",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "lead_idempotency",
+  "category": "same_search_minutes_later",
+  "title": "Misma búsqueda minutos después",
+  "description": "Lead abierto compatible: reutilizar, no crear nuevo automático.",
+  "journey": "buyer",
+  "messages": [
+    "Hola de nuevo",
+    "Sigo buscando casa en Cumbres 5M"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "lead_reused": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "fixture": {
+    "open_compatible_lead": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

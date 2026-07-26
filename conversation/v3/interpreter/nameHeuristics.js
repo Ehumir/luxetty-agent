@@ -20,6 +20,10 @@ const NON_NAME_EXACT = new Set([
   'ninguna',
   'gracias',
   'va',
+  'hola',
+  'perdon',
+  'perdón',
+  'disculpa',
 ]);
 
 const NON_NAME_PATTERNS = [
@@ -38,6 +42,13 @@ const NON_NAME_PATTERNS = [
   /\?$/,
   /\b(desocupad|ocupad|habitad|libre|rentad)\b/,
   /\best[aá]\s+(en|desocupad|libre|ocupad)/,
+  /\b(?:quiero|busco|necesito)\s+(?:comprar|vender|rentar)\b/,
+  /\ben\s+realidad\b/,
+  /\b(?:perdon|perdón|disculpa)\b/,
+  /\b(?:cerca|avenida|anuncio|campa[nñ]a|presupuesto|millones?)\b/,
+  /\bvi\s+su\s+anuncio\b/,
+  /^(ok\s+)?sigue$/,
+  /\b(?:la\s+m[aá]s\s+barata|sin\s+ruido|con\s+vigilancia|ok\s+sigue)\b/,
 ];
 
 /**

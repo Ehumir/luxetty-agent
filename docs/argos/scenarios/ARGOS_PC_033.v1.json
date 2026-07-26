@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_033",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "handoff",
+  "category": "advisor_reply_silence_ai",
+  "title": "Advisor reply — AI silencio",
+  "description": "Mientras HUMAN activo, AI no responde al usuario.",
+  "journey": "buyer",
+  "messages": [
+    "[advisor_message]",
+    "Hola, ¿seguimos con Cumbres?"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "ai_silent": true,
+    "control_mode": "HUMAN"
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "tags": [
+    "EXPECTED_FAIL_PRE_F2"
+  ],
+  "gate": {
+    "status": "EXPECTED_FAIL_PRE_F2",
+    "until_phase": "F2",
+    "reason": "HUMAN silence requires F2 control mode"
+  },
+  "fixture": {
+    "control_mode": "HUMAN",
+    "handoff_state": "ACTIVE"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_011",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "continuity",
+  "category": "budget_correction",
+  "title": "Corrección de presupuesto",
+  "description": "Usuario corrige presupuesto; slot update sin nuevo lead automático.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Busco casa en Cumbres",
+    "Presupuesto 5 millones",
+    "Perdón, en realidad 3.5 millones",
+    "Me llamo Sofía"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "intent": "buy",
+    "lead_type": "demand",
+    "known_budget": 3500000,
+    "budget_corrected": true,
+    "no_auto_new_lead_on_budget_change": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

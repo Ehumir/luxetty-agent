@@ -15,7 +15,6 @@ function isPropertyInquiryContext(state) {
   return (
     state &&
     state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY &&
-    state.qualificationComplete === true &&
     !!(state.propertyListingCode || state.activeProperty?.id)
   );
 }
@@ -68,7 +67,7 @@ function classifyFactFamily(t) {
   if (/\b(fotos?|imagenes|im[aá]genes|galer[ií]a)\b/.test(t)) return 'photos';
   if (/\b(pisos|planta|niveles|patio|terreno|m2|m²|metros|rec[aá]maras?|habitaciones?|baños?|bath)\b/.test(t)) return 'layout';
   if (/\b(diferencia|diferencias|comparar|comparaci[oó]n|versus|vs|entre\s+las\s+dos)\b/.test(t)) return 'compare';
-  if (/\b(info|informaci[oó]n|detalles|m[aá]s\s+detalles|saber\s+m[aá]s|cu[eé]ntame)\b/.test(t)) return 'info';
+  if (/\b(info|informaci[oó]n|detalles|m[aá]s\s+detalles|saber\s+m[aá]s|cu[eé]ntame|h[aá]blame)\b/.test(t)) return 'info';
   if (/\b(me\s+interesa|interesa|me\s+gusta)\b/.test(t)) return 'interest';
   if (/\?/.test(t) && t.length < 120) return 'generic';
   if (t === 'hola' || t.startsWith('hola ') || t === 'buenas' || t === 'hey' || /^hola[!.👋\s]+$/i.test(t))
@@ -84,9 +83,11 @@ function classifyFactFamily(t) {
  */
 function classifyPropertyInquiryTurn(state, text, raw) {
   if (!isPropertyInquiryContext(state)) return null;
+  // SoT facts (precio/zona/URL) no requieren name-first; solo handoff comercial sí.
+  const hasListing = !!(state.propertyListingCode || state.activeProperty?.id);
   const hasName = !!state.collectedFields?.fullName;
   const inQa = state.propertySubMode === 'PROPERTY_QA';
-  if (!hasName && !inQa) return null;
+  if (!hasListing && !hasName && !inQa) return null;
 
   const t = normalizeText(String(text || ''));
   const rawTrim = cleanSpaces(String(raw || ''));
@@ -105,6 +106,11 @@ function classifyPropertyInquiryTurn(state, text, raw) {
 
   if (inQa && isSoftCloseAck(t)) {
     return { kind: 'SOFT_CLOSE' };
+  }
+
+  // Primer turno con código + "háblame / info" implícito.
+  if (hasListing && !inQa && /\b(?:propiedad|casa|depa|lux[- ]?a?\d)/i.test(t)) {
+    return { kind: 'FACT', family: 'info' };
   }
 
   return null;

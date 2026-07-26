@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_050",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "lead_idempotency",
+  "category": "two_leads_ask_campaign_qa_crm",
+  "title": "Dos leads / campaña / qa_crm_force / dry-run / RAG no write",
+  "description": "Con dos leads activos preguntar; campaña distinta eval evidencia; CRM dry-run; RAG no escribe.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Tengo dos búsquedas abiertas",
+    "Vi otra campaña distinta",
+    "¿Cuál usan?"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "ask_which_lead": true,
+    "crm_dry_run": true,
+    "rag_no_crm_write": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true,
+    "rag_writes_crm": true
+  },
+  "tags": [
+    "EXPECTED_FAIL_PRE_F2"
+  ],
+  "gate": {
+    "status": "EXPECTED_FAIL_PRE_F2",
+    "until_phase": "F2",
+    "reason": "Multi-lead + campaign evidence needs F2"
+  },
+  "fixture": {
+    "two_active_leads": true,
+    "qa_crm_force_new_lead": false,
+    "crm_dry_run": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

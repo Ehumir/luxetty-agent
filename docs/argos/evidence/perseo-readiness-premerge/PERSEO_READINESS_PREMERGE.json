@@ -1,0 +1,57 @@
+{
+  "generated_at": "2026-07-23T01:22:38.443Z",
+  "suite": "argos-matrix-100-runnable-premerge",
+  "branch": "chore/reconcile-main-production-perseo-20260722",
+  "runner": "scripts/argos-run-suite.js --suite argos-matrix-100-runnable-premerge",
+  "mode": "local",
+  "crm_dry_run": true,
+  "counts": {
+    "runnable": 53,
+    "pass": 46,
+    "fail": 7,
+    "xfail_catalogued_not_run_in_this_pass": 23,
+    "not_run_excluded": 24,
+    "pass_rate_runnable": 0.868
+  },
+  "threshold_need": 1.0,
+  "failures": [
+    {
+      "scenario_code": "ARGOS_PC_001",
+      "severity": "P0",
+      "summary": "sticky offer not broken to rent"
+    },
+    {
+      "scenario_code": "ARGOS_PC_004",
+      "severity": "P0",
+      "summary": "seller to rent demand not applied"
+    },
+    {
+      "scenario_code": "ARGOS_PC_011",
+      "severity": "P1",
+      "summary": "budget correction not reflected"
+    },
+    {
+      "scenario_code": "ARGOS_PC_012",
+      "severity": "P1",
+      "summary": "rent to buy switch not applied"
+    },
+    {
+      "scenario_code": "ARGOS_PC_017",
+      "severity": "P1",
+      "summary": "campaign intent null"
+    },
+    {
+      "scenario_code": "ARGOS_PC_071",
+      "severity": "P2",
+      "summary": "lead_type supply vs offer enum"
+    },
+    {
+      "scenario_code": "ARGOS_PC_098",
+      "severity": "P1",
+      "summary": "known_name mismatch on long thread"
+    }
+  ],
+  "verdict": "FAIL",
+  "blocks_merge": true,
+  "log_path": "/tmp/argos-runnable-53.log"
+}

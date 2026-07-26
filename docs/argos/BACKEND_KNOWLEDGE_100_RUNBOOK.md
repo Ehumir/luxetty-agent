@@ -15,15 +15,20 @@
 | `RAG_DOMAIN_THRESHOLDS_JSON` | vacío | JSON opcional umbrales |
 | `RAG_HYBRID_ENABLED` | `false` | FTS + vector RRF |
 | `RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED` | `false` | Gate entidad campaña |
+| `RAG_PROPERTY_IMAGES_ENABLED` | `false` | Citar cover SoT en PROPERTY_QA / index |
+| `PERSEO_CONSULTIVE_TOOLS_ENABLED` | `false` | Tool-calling consultivo (solo lectura) |
+| `PERSEO_CONSULTIVE_TOOLS_GLOBAL` | `false` | Tools para todo el tráfico |
+| `PERSEO_CONSULTIVE_TOOLS_ALLOWLIST` | vacío | Canary tools |
 
 ## Flags ATENA (CDC)
 
 | Variable | Default | Rol |
 |----------|---------|-----|
-| `KNOWLEDGE_CDC_WORKER_ENABLED` | `false` | Procesar `knowledge_reindex_jobs` |
+| `KNOWLEDGE_CDC_WORKER_ENABLED` | `false` | Procesar `knowledge_reindex_jobs` (edge + cron) |
 
 Migración CDC: `supabase/migrations/20260721220000_knowledge_reindex_cdc.sql`  
-Worker: `scripts/knowledge/processKnowledgeReindexJobs.mjs`  
+Worker script: `scripts/knowledge/processKnowledgeReindexJobs.mjs`  
+Edge + cron permanente: `process-knowledge-cdc` + `20260722140000_knowledge_cdc_cron_every_5_min.sql`  
 Migración hybrid: `supabase/migrations/20260722120000_knowledge_hybrid_search.sql`
 
 ## KPIs GO canary / producción (congelados)
@@ -33,7 +38,7 @@ Migración hybrid: `supabase/migrations/20260722120000_knowledge_hybrid_search.s
 | Opciones con link resoluble (muestra) | ≥95% |
 | Listings / precios / URLs inventados | 0 |
 | Anti-PII audit | 0 |
-| Freshness lag p95 CDC | documentado y sin jobs stuck |
+| Freshness lag p95 CDC | cron cada 5 min; cola pending sin stuck |
 | Certificación funcional | PASS antes de GLOBAL |
 | Wrong-domain / hallucination en muestra canary | 0 |
 | CRM writes desde RAG | 0 |
@@ -58,8 +63,8 @@ Migración hybrid: `supabase/migrations/20260722120000_knowledge_hybrid_search.s
    ```
 4. Smoke: renta, venta, PROPERTY_QA, objeción, campaña, sin stock → fallback.
 5. `node scripts/qa/perseoFunctionalCertification.js` → PASS.
-6. CDC worker prod si staging OK.
-7. Expandir allowlist 48–72h → `GLOBAL=true` solo tras KPIs verdes.
+6. CDC worker prod (`KNOWLEDGE_CDC_WORKER_ENABLED=true` en edge) + cron 5 min.
+7. Tras cert PASS: `PERSEO_INVENTORY_OPTIONS_GLOBAL=true` (+ reglas/inventory RAG vía `RAG_P0_GLOBAL_MODE` o allowlist ampliada). Contrato: `PRODUCTION_RAG_GO = YES`.
 8. Rollback: todas las flags `false`.
 
 ## Suites unitarias baseline (deben permanecer verdes)

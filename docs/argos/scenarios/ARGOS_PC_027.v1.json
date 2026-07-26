@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_027",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "ownership",
+  "category": "perseo_infers_assignment_must_not",
+  "title": "PERSEO infiere assignment (must-not)",
+  "description": "PERSEO no debe inferir ni escribir assignment por su cuenta.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Asígname al mejor asesor de Cumbres"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "defers_assignment_to_policy": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true,
+    "perseo_writes_assignment": true,
+    "invent_assignment": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

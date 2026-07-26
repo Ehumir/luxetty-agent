@@ -407,17 +407,22 @@ function composeNetworkFallbackDemand(state, { operationLabel = 'esa búsqueda' 
  */
 function tryComposeInventoryOptionsReply(state) {
   const goal = state.conversationGoal;
+  const meta = state.inventorySearchMeta || {};
+  const options = Array.isArray(state.matchedOptions) ? state.matchedOptions : [];
   const isDemand =
     goal === CONVERSATION_GOALS.BUY_PROPERTY ||
     goal === CONVERSATION_GOALS.RENT_PROPERTY ||
-    state.leadFlow === 'demand';
+    state.leadFlow === 'demand' ||
+    meta.attempted === true ||
+    options.length > 0;
   if (!isDemand) return null;
-  const options = Array.isArray(state.matchedOptions) ? state.matchedOptions : [];
   const lines = formatInventoryOptionLines(options);
   if (lines.length) {
     const nm = firstName(state) || 'perfecto';
-    const opLabel = goal === CONVERSATION_GOALS.RENT_PROPERTY ? 'renta' : 'venta';
-    const meta = state.inventorySearchMeta || {};
+    const opLabel =
+      goal === CONVERSATION_GOALS.RENT_PROPERTY || meta.operation === 'rent' || state.operationType === 'rent'
+        ? 'renta'
+        : 'venta';
     const zone = meta.zone || state.locationText || null;
     const budget =
       meta.budgetMax != null
@@ -440,9 +445,10 @@ function tryComposeInventoryOptionsReply(state) {
       toneFlags: { consultive: true, inventoryOptions: true },
     };
   }
-  if (state.inventorySearchMeta?.emptyAfterSearch) {
+  if (meta.emptyAfterSearch) {
     return composeNetworkFallbackDemand(state, {
-      operationLabel: goal === CONVERSATION_GOALS.RENT_PROPERTY ? 'renta' : 'compra',
+      operationLabel:
+        goal === CONVERSATION_GOALS.RENT_PROPERTY || meta.operation === 'rent' ? 'renta' : 'compra',
     });
   }
   return null;
@@ -591,6 +597,7 @@ function getActivePropertyFacts(state) {
     bedrooms: ap.bedrooms != null ? Number(ap.bedrooms) : null,
     constructionM2: ap.construction_m2 != null ? Number(ap.construction_m2) : null,
     currency: ap.currency || 'MXN',
+    coverImageUrl: ap.cover_image_url || ap.coverImageUrl || null,
   };
 }
 
@@ -683,12 +690,40 @@ function composePropertyFactReply(state, family) {
       };
     }
     case 'compare': {
+      const comps = Array.isArray(st.matchedComparables) ? st.matchedComparables : [];
+      if (comps.length) {
+        try {
+          const { formatComparablesReply } = require('../../../services/comparablesService');
+          return {
+            responseText: formatComparablesReply(comps, { greet, ref }),
+            followUpQuestion: null,
+            awaitingField: null,
+            toneFlags: { consultive: true, propertyCompare: true },
+          };
+        } catch {
+          /* fall through */
+        }
+      }
+      const opts = Array.isArray(st.matchedOptions) ? st.matchedOptions : [];
+      if (opts.length >= 2) {
+        try {
+          const { formatComparablesReply } = require('../../../services/comparablesService');
+          return {
+            responseText: formatComparablesReply(opts.slice(0, 3), { greet, ref }),
+            followUpQuestion: null,
+            awaitingField: null,
+            toneFlags: { consultive: true, propertyCompare: true },
+          };
+        } catch {
+          /* fall through */
+        }
+      }
       const hist = Array.isArray(st.propertyHistory) ? st.propertyHistory : [];
       const prev = hist.find((h) => h && h.code && h.code !== code);
       const other = prev?.code || hist[0]?.code || null;
       const otherRef = other ? ` (antes viste ${other})` : '';
       return {
-        responseText: `${greet}Para comparar, tomo ${ref} como referencia actual${otherRef}. Dime si quieres precio, zona o recámaras de ${code || 'esta ficha'} y no mezclo datos de otra propiedad.`,
+        responseText: `${greet}Para comparar, tomo ${ref} como referencia actual${otherRef}. Aún no tengo otras fichas publicables similares en este hilo; dime zona o presupuesto y busco opciones reales con enlace.`,
         followUpQuestion: null,
         awaitingField: null,
         toneFlags: { consultive: true, propertyCompare: true },
@@ -760,13 +795,28 @@ function composePropertyFactReply(state, family) {
         awaitingField: null,
         toneFlags: { consultive: true },
       };
-    case 'photos':
+    case 'photos': {
+      const cover =
+        process.env.RAG_PROPERTY_IMAGES_ENABLED === 'true'
+          ? f.coverImageUrl || st.activeProperty?.cover_image_url || null
+          : null;
+      if (cover) {
+        return {
+          responseText: `${greet}La portada publicada de ${ref} está aquí: ${cover}${
+            f.publicUrl ? ` · Ficha completa: ${f.publicUrl}` : ''
+          }`,
+          followUpQuestion: null,
+          awaitingField: null,
+          toneFlags: { consultive: true },
+        };
+      }
       return {
         responseText: `${greet}Las fotos suelen ir en la galería de la ficha pública de ${ref}. ${f.publicUrl ? `Puedes verlas aquí: ${f.publicUrl}` : 'Cuando tenga el enlace te lo paso; mientras, si me describes qué buscas (recámaras, niveles, estado), te oriento con lo publicado.'}`,
         followUpQuestion: null,
         awaitingField: null,
         toneFlags: { consultive: true },
       };
+    }
     case 'layout': {
       const bits = [];
       if (f.bedrooms != null) bits.push(`${f.bedrooms} recámaras`);
@@ -786,13 +836,27 @@ function composePropertyFactReply(state, family) {
         toneFlags: { consultive: true },
       };
     }
-    case 'info':
+    case 'info': {
+      const bits = [];
+      if (f.priceLabel) bits.push(`precio publicado ${f.priceLabel}`);
+      else if (f.priceAmount != null) bits.push(`precio publicado ${formatMoneyMx(f.priceAmount)}`);
+      if (f.locationLabel) bits.push(`zona aproximada ${f.locationLabel}`);
+      if (bits.length) {
+        const urlTail = f.publicUrl ? ` Ficha: ${f.publicUrl}` : '';
+        return {
+          responseText: `${greet}${f.title ? `«${f.title}». ` : ''}De ${ref} en lo publicado: ${bits.join('; ')}.${urlTail}`,
+          followUpQuestion: null,
+          awaitingField: null,
+          toneFlags: { consultive: true },
+        };
+      }
       return {
         responseText: `${greet}${f.title ? `La ficha la tengo como «${f.title}». ` : ''}Con ${ref} puedo ir campo por campo (precio, zona, m², recámaras, enlace). ¿Por cuál quieres que empecemos?`,
         followUpQuestion: null,
         awaitingField: null,
         toneFlags: { consultive: true },
       };
+    }
     case 'interest':
       return {
         responseText: `${greet}Se nota el interés en ${ref}. Para no asumir: dime si primero quieres aterrizar precio, ubicación aproximada o ver la ficha pública, y lo vemos en ese orden.`,
@@ -1282,10 +1346,22 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
     }
     if (!state.collectedFields?.fullName) return composeSlotQuestion(state, 'full_name');
     if (!state.locationText) return composeSlotQuestion(state, 'location_text');
-    return composeSlotQuestion(state, 'expected_price');
+    if (!state.propertyType && !state.collectedFields?.propertyType) {
+      return composeSlotQuestion(state, 'property_type');
+    }
+    // Precio soft post-CRM: si ya hay nombre+zona+tipo, ofrecer handoff / consentimiento.
+    if (plannerOut.qualificationComplete || plannerOut.sufficientForHandoff) {
+      return composeHandoffOffer(state);
+    }
+    if (plannerOut.nextSlot) return composePlannerSlotQuestion(state, plannerOut.nextSlot);
+    return composeHandoffOffer(state);
   }
 
   if (intent === V3_INTENT.PROPERTY_INQUIRY) {
+    const hasFacts = !!(state.activeProperty && state.activeProperty.id);
+    if (hasFacts) {
+      return composePropertyFactReply(state, decision.propertyInquiryFamily || 'info');
+    }
     if (!state.collectedFields?.fullName) return composeSlotQuestion(state, 'full_name');
     if (plannerOut.nextSlot) return composePlannerSlotQuestion(state, plannerOut.nextSlot);
   }

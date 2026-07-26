@@ -38,6 +38,39 @@ describe('R0 P0.1.2 context continuity', () => {
     assert.equal(out.lead_flow, 'demand');
   });
 
+  it('casas en renta / quiero rentar rompen sticky offer', () => {
+    const prev = {
+      ...getDefaultAiState(),
+      lead_flow: 'offer',
+      operation_type: 'sale',
+      property_type: 'house',
+      location_text: 'Cumbres',
+    };
+    const a = r0.applyR0StickySignalsGuard(prev, {}, 'Hola, ¿tienes casas en renta en zona Cumbres?');
+    assert.equal(a.lead_flow, 'demand');
+    assert.equal(a.operation_type, 'rent');
+    const b = r0.applyR0StickySignalsGuard(prev, { lead_flow: 'offer' }, 'quiero rentar');
+    assert.equal(b.lead_flow, 'demand');
+    assert.equal(b.operation_type, 'rent');
+    assert.equal(r0.explicitDemandSearchIntent('Hola, ¿tienes casas en renta en zona Cumbres?'), true);
+  });
+
+  it('buildConsultiveFallbackReply: quiero rentar no vuelve a venta', () => {
+    const reply = idx.buildConsultiveFallbackReply({
+      text: 'quiero rentar',
+      signals: { lead_flow: 'offer' },
+      aiState: {
+        ...getDefaultAiState(),
+        lead_flow: 'offer',
+        operation_type: 'sale',
+        location_text: 'Cumbres',
+        property_type: 'house',
+      },
+    });
+    assert.doesNotMatch(String(reply), /orientar con la venta|Sigo con tu venta/i);
+    assert.match(String(reply), /búsqueda|buscar/i);
+  });
+
   it('mergeContextualSignals no infiere budget_max de comprador cuando prev.operation_type es sale', () => {
     const prev = { ...getDefaultAiState(), lead_flow: 'offer', operation_type: 'sale', location_text: 'Cumbres' };
     const built = { ...prev };

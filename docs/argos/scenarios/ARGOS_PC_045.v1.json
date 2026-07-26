@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_045",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "lead_idempotency",
+  "category": "zone_change_idempotency",
+  "title": "Cambio zona — política ask/reuse",
+  "description": "Cambio zona material: update o ask; no spam leads.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Busco en Cumbres",
+    "Mejor Mitras"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "zone_policy_applied": true,
+    "no_spam_leads": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

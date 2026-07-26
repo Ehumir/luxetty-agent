@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_037",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "handoff",
+  "category": "advisor_closes_topic",
+  "title": "Advisor cierra tema",
+  "description": "Asesor cierra tema → CLOSED + evento; lead no necesariamente cerrado.",
+  "journey": "buyer",
+  "messages": [
+    "[advisor_close_topic]"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "topic_lifecycle": "CLOSED",
+    "topic_closed_event": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "tags": [
+    "EXPECTED_FAIL_PRE_F2"
+  ],
+  "gate": {
+    "status": "EXPECTED_FAIL_PRE_F2",
+    "until_phase": "F2",
+    "reason": "Advisor topic close requires F2 events"
+  },
+  "fixture": {
+    "control_mode": "HUMAN"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

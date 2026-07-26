@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_046",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "lead_idempotency",
+  "category": "rent_to_buy_new_topic_policy",
+  "title": "Renta→compra — new topic/lead policy",
+  "description": "Cambio operación: confirmar; crear vía nuevo topic+política.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Renta en Cumbres 20k",
+    "Cambio a compra 4M"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "rent_to_buy_policy": true,
+    "confirm_before_new_lead": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "tags": [
+    "EXPECTED_FAIL_PRE_F2"
+  ],
+  "gate": {
+    "status": "EXPECTED_FAIL_PRE_F2",
+    "until_phase": "F2",
+    "reason": "Rent→buy new topic/lead policy needs F2"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

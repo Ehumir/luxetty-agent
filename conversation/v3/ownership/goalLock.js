@@ -28,7 +28,13 @@ function applyGoalOwnership(state, patch, decision) {
     releaseStickyContext(out);
   }
 
-  if (isLandingCaptureActive(state) || out.landingCaptureFlow === true) {
+  // Landing sticky solo mientras el flujo de captación sigue activo.
+  // Si el intérprete pivota a demanda (explicitFlowSwitch) o apaga landing en el patch, no forzar offer.
+  const landingStillActive =
+    out.landingCaptureFlow !== false &&
+    (out.landingCaptureFlow === true || isLandingCaptureActive(state));
+
+  if (landingStillActive && !decision.explicitFlowSwitch) {
     out.conversationGoal = CONVERSATION_GOALS.SELL_PROPERTY;
     out.conversationGoalLocked = true;
     out.leadFlow = 'offer';

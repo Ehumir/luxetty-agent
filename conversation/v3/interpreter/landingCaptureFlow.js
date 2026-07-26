@@ -7,6 +7,10 @@ const {
   extractLooseLocationPhrase,
   isDemandSearchInbound,
   isExplicitPropertyInquiryPhrase,
+  mentionsRentDemand,
+  mentionsBuyDemand,
+  isRentOutOwnerPhrase,
+  matchesSellerAcquisitionPattern,
 } = require('./campaignIntake');
 const { extractPropertyListingCode } = require('./propertyListingCode');
 const { extractBridgeToken } = require('../../../services/intake/extractBridgeToken');
@@ -130,6 +134,11 @@ function formatStoredName(name) {
 function resolveZonePhrase(phrase) {
   const raw = cleanSpaces(String(phrase || ''));
   if (!raw || !isPlausibleZone(raw)) return null;
+  // Precio / valuación no es zona ("Vale como 8 millones").
+  if (parseMoneyAmount(raw) != null && !normalizeLocationFromUserText(raw)) return null;
+  if (/\b(?:vale|cuesta|precio|presupuesto)\b/i.test(raw) && /\b(?:millon|millones|mil|mdp)\b/i.test(raw)) {
+    return null;
+  }
   const norm = normalizeLocationFromUserText(raw);
   if (!norm) return raw;
   if (raw.length >= norm.length && raw.split(/\s+/).length >= norm.split(/\s+/).length) {
@@ -293,6 +302,19 @@ function advanceLandingCaptureStage(state, raw) {
   if (stage === 'name_zone') {
     const { name, zone } = parseNameAndZone(raw);
     if (!name && !zone) {
+      const amountOnly = parseMoneyAmount(raw);
+      if (amountOnly != null && amountOnly > 0) {
+        return {
+          reply:
+            'Gracias, tomo esa referencia de precio. ¿Me compartes tu nombre y en qué colonia o zona se encuentra la propiedad?',
+          patch: {
+            expectedPrice: amountOnly,
+            collectedFields: { ...(state.collectedFields || {}), expectedPrice: amountOnly },
+          },
+          handoff: false,
+          intent: V3_INTENT.SELLER_PRICE,
+        };
+      }
       return { reply: null, patch: {}, handoff: true, intent: V3_INTENT.UNKNOWN };
     }
     const patch = {
@@ -404,6 +426,15 @@ function advanceLandingCaptureStage(state, raw) {
   return { reply: null, patch: {}, handoff: true, intent: V3_INTENT.UNKNOWN };
 }
 
+function isExplicitDemandPivotAwayFromLanding(t, raw) {
+  // Nunca pivotea fuera de captación si el inbound es de propietario/prevaluación.
+  if (matchesSellerAcquisitionPattern(t)) return false;
+  if (mentionsRentDemand(t) && !isRentOutOwnerPhrase(t)) return true;
+  if (mentionsBuyDemand(t)) return true;
+  if (isDemandSearchInbound(raw) && !matchesSellerAcquisitionPattern(t)) return true;
+  return false;
+}
+
 /**
  * @param {import('../types/conversationState').ConversationState} state
  * @param {string} raw
@@ -429,6 +460,10 @@ function tryInterpretLandingCapture(state, raw, t, patch, decision) {
   }
 
   if (isLandingCaptureActive(state)) {
+    // Demanda explícita (renta/compra) prevalece sobre sticky de captación.
+    if (isExplicitDemandPivotAwayFromLanding(t, raw)) {
+      return null;
+    }
     const advanced = advanceLandingCaptureStage(state, raw);
     decision.detectedIntent = advanced.intent;
     decision.confidence = advanced.handoff ? 0.4 : 0.92;
@@ -445,6 +480,10 @@ function tryInterpretLandingCapture(state, raw, t, patch, decision) {
   }
 
   if (matchesLandingCaptureInbound(raw)) {
+    // No secuestrar inbound de demanda como captación vendedor.
+    if (isExplicitDemandPivotAwayFromLanding(t, raw)) {
+      return null;
+    }
     Object.assign(patch, buildLandingCaptureBootstrapPatch());
     decision.detectedIntent = V3_INTENT.LANDING_CAPTURE;
     decision.confidence = 0.94;

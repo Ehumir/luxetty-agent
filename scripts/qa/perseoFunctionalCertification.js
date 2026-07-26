@@ -194,7 +194,7 @@ function noInventedCodes(rec) {
 
 function askedOperationTrio(text) {
   const t = String(text || '').toLowerCase();
-  return /compra.*venta.*renta|venta.*renta|renta.*o.*venta|compra,\s*venta\s*o\s*renta/.test(t);
+  return /\bcompra\b.*\bventa\b.*\brenta\b|\bventa\b.*\brenta\b|\brenta\b.*\bo\b.*\bventa\b|compra,\s*venta\s*o\s*renta/.test(t);
 }
 
 async function main() {

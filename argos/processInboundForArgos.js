@@ -137,6 +137,124 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
         input.supabaseRaw
       )) || legacyHydration;
   }
+
+  // Premium consultivo: mismas opciones reales que producción (SQL + flags), vía ARGOS.
+  if (input.supabaseRaw) {
+    try {
+      const { resolveInventoryOptionsForTurn } = require('../services/inventoryOptionsTurn');
+      const inv = await resolveInventoryOptionsForTurn({
+        db: input.supabaseRaw,
+        text: input.text,
+        phone: input.phone_sim,
+        previousAiState: {
+          operation_type: priorState?.operationType || null,
+          location_text: priorState?.locationText || null,
+          budget_max: priorState?.budget ?? null,
+          bedrooms: priorState?.bedrooms ?? null,
+          lead_flow: priorState?.leadFlow || null,
+          conversation_goal: priorState?.conversationGoal || null,
+        },
+        logger: console,
+      });
+      if (inv) {
+        legacyHydration = {
+          ...(legacyHydration || {}),
+          matchedOptions: inv.matchedOptions || [],
+          inventorySearchMeta: inv.inventorySearchMeta || null,
+        };
+        traceEvent(trace, {
+          type: 'inventory_options_search',
+          phase: 'hydration',
+          visibility: 'event',
+          payload: {
+            count: (inv.matchedOptions || []).length,
+            source: inv.inventorySearchMeta?.source || null,
+            empty: !!inv.inventorySearchMeta?.emptyAfterSearch,
+            operation: inv.inventorySearchMeta?.operation || null,
+          },
+        });
+      }
+    } catch (invErr) {
+      traceEvent(trace, {
+        type: 'inventory_options_search_error',
+        phase: 'hydration',
+        visibility: 'debug',
+        payload: { error: String(invErr?.message || invErr) },
+      });
+    }
+
+    // Comparables SoT cuando hay activeProperty + intención de comparar / QA.
+    try {
+      const ap = legacyHydration?.activeProperty;
+      const wantsCompare = /\b(compar|similar|parecid|otras?\s+opciones?)\b/i.test(String(input.text || ''));
+      if (ap?.id && wantsCompare) {
+        const { findComparables } = require('../services/comparablesService');
+        const cmp = await findComparables(input.supabaseRaw, { activeProperty: ap, limit: 3 }, console);
+        if (cmp.options?.length) {
+          legacyHydration = {
+            ...(legacyHydration || {}),
+            matchedComparables: cmp.options,
+          };
+        }
+      }
+    } catch (cmpErr) {
+      traceEvent(trace, {
+        type: 'comparables_search_error',
+        phase: 'hydration',
+        visibility: 'debug',
+        payload: { error: String(cmpErr?.message || cmpErr) },
+      });
+    }
+
+    // Tool-calling consultivo (flag OFF por defecto).
+    try {
+      const { runConsultiveTools, isConsultiveToolsEffectiveForUser } = require('../conversation/v3/planner/consultiveToolsPlanner');
+      if (isConsultiveToolsEffectiveForUser(input.phone_sim)) {
+        const toolsOut = await runConsultiveTools({
+          db: input.supabaseRaw,
+          text: input.text,
+          phone: input.phone_sim,
+          state: {
+            ...(priorState || {}),
+            activeProperty: legacyHydration?.activeProperty || priorState?.activeProperty,
+            locationText: priorState?.locationText,
+            ragContextPack: legacyHydration?.ragContextPack || priorState?.ragContextPack,
+          },
+          logger: console,
+        });
+        if (toolsOut.toolsCalled.length) {
+          const r = toolsOut.results;
+          legacyHydration = {
+            ...(legacyHydration || {}),
+            consultiveTools: toolsOut,
+            matchedComparables:
+              r.get_comparables?.options || legacyHydration?.matchedComparables || undefined,
+            matchedOptions:
+              r.search_inventory_options?.matchedOptions || legacyHydration?.matchedOptions || undefined,
+            inventorySearchMeta:
+              r.search_inventory_options?.inventorySearchMeta ||
+              legacyHydration?.inventorySearchMeta ||
+              undefined,
+            zoneContext: r.get_zone_context || undefined,
+          };
+          traceEvent(trace, {
+            type: 'consultive_tools',
+            phase: 'hydration',
+            visibility: 'event',
+            payload: { tools: toolsOut.toolsCalled },
+          });
+        }
+      }
+    } catch (toolErr) {
+      traceEvent(trace, {
+        type: 'consultive_tools_error',
+        phase: 'hydration',
+        visibility: 'debug',
+        payload: { error: String(toolErr?.message || toolErr) },
+      });
+    }
+  }
+
   const v3Result = await v3InboundBridge.tryV3PrimaryReply({
     conversationId,
     phone: input.phone_sim,

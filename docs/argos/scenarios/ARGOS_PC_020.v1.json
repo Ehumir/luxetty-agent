@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_020",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "continuity",
+  "category": "informational_no_lead",
+  "title": "Informativo sin lead + timeout awaiting field",
+  "description": "Pregunta informativa; no crear lead. Incluye silencio/timeout de campo pendiente.",
+  "journey": "informational",
+  "messages": [
+    "Hola",
+    "¿En qué zonas trabajan?",
+    "Solo quiero información general"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "informational": true,
+    "should_create_lead": false,
+    "crm_ready": false
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true,
+    "forced_lead_creation": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

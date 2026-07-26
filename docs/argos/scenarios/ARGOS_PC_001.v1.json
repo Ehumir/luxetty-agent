@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_001",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "continuity",
+  "category": "sticky_offer_rent_break",
+  "title": "Sticky offer + break a renta",
+  "description": "Usuario inicia venta; luego pide casas en renta. Debe romper sticky offer y no forzar oferta.",
+  "journey": "mixed",
+  "messages": [
+    "Hola",
+    "Quiero vender mi casa en Cumbres",
+    "Vale como 8 millones",
+    "Mejor busco casas en renta en Cumbres",
+    "Presupuesto 25 mil al mes"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "intent": "rent",
+    "lead_type": "demand",
+    "operation_type": "rent",
+    "sticky_offer_broken": true,
+    "known_zone": "Cumbres"
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true,
+    "sticky_offer_lock": true,
+    "forced_handoff": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

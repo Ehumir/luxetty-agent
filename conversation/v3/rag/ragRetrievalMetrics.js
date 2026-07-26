@@ -1,161 +1,141 @@
 'use strict';
 
 /**
- * RQ-1 / RQ-3 / RQ-4 — métricas de retrieval (offline + runtime helpers).
+ * RQ-1 — métricas IR offline (Recall@k, MRR, nDCG). Sin side-effects en producción.
  */
 
 function chunkScore(chunk) {
   return Number(chunk?.similarity ?? chunk?.score ?? 0);
 }
 
-function chunkId(chunk) {
-  return chunk?.chunk_id || chunk?.id || null;
-}
-
-/**
- * Rank 1-based of first correct chunk in ranked list; null if absent.
- */
-function rankOfCorrect(ranked = [], correctIds) {
-  const set =
-    correctIds instanceof Set
-      ? correctIds
-      : new Set(Array.isArray(correctIds) ? correctIds : []);
-  if (!set.size) return null;
-  for (let i = 0; i < ranked.length; i++) {
-    const id = chunkId(ranked[i]);
-    if (id && set.has(id)) return i + 1;
+function rankOfCorrect(results = [], correctChunkIds = new Set()) {
+  const ids = correctChunkIds instanceof Set ? correctChunkIds : new Set(correctChunkIds);
+  for (let i = 0; i < results.length; i += 1) {
+    const id = results[i]?.chunk_id || results[i]?.id;
+    if (id && ids.has(id)) return i + 1;
   }
   return null;
 }
 
-function recallAtK(ranked = [], correctIds, k = 5) {
-  const set =
-    correctIds instanceof Set
-      ? correctIds
-      : new Set(Array.isArray(correctIds) ? correctIds : []);
-  if (!set.size) return 0;
-  const hit = ranked.slice(0, k).some((c) => set.has(chunkId(c)));
-  return hit ? 1 : 0;
+function recallAtK(results = [], correctChunkIds = new Set(), k = 1) {
+  const ids = correctChunkIds instanceof Set ? correctChunkIds : new Set(correctChunkIds);
+  if (!ids.size) return null;
+  const top = results.slice(0, k);
+  return top.some((r) => ids.has(r?.chunk_id || r?.id)) ? 1 : 0;
 }
 
-function mrr(ranked = [], correctIds) {
-  const rank = rankOfCorrect(ranked, correctIds);
+function mrr(results = [], correctChunkIds = new Set()) {
+  const rank = rankOfCorrect(results, correctChunkIds);
   return rank ? 1 / rank : 0;
 }
 
-function ndcgAtK(ranked = [], correctIds, k = 5) {
-  const set =
-    correctIds instanceof Set
-      ? correctIds
-      : new Set(Array.isArray(correctIds) ? correctIds : []);
-  if (!set.size) return 0;
+function ndcgAtK(results = [], correctChunkIds = new Set(), k = 10) {
+  const ids = correctChunkIds instanceof Set ? correctChunkIds : new Set(correctChunkIds);
+  if (!ids.size) return null;
+  const top = results.slice(0, k);
   let dcg = 0;
-  for (let i = 0; i < Math.min(k, ranked.length); i++) {
-    if (set.has(chunkId(ranked[i]))) {
+  for (let i = 0; i < top.length; i += 1) {
+    const id = top[i]?.chunk_id || top[i]?.id;
+    if (id && ids.has(id)) {
       dcg += 1 / Math.log2(i + 2);
     }
   }
-  const idealHits = Math.min(set.size, k);
+  const idealHits = Math.min(ids.size, k);
   let idcg = 0;
-  for (let i = 0; i < idealHits; i++) {
+  for (let i = 0; i < idealHits; i += 1) {
     idcg += 1 / Math.log2(i + 2);
   }
   return idcg > 0 ? dcg / idcg : 0;
 }
 
-/**
- * Simula curva recall@1 / fallback rate vs threshold.
- */
-function simulateThresholdCurve(rows = [], thresholds = [0.5, 0.6, 0.72, 0.8]) {
-  return thresholds.map((th) => {
-    let labeled = 0;
-    let recall1 = 0;
-    let fallback = 0;
-    for (const row of rows) {
-      const top20 = row.top20 || [];
-      const correct = row.correct_chunk_ids || row.correctIds;
-      const kept = top20.filter((c) => chunkScore(c) >= th);
-      if (row.has_labeled_relevant || (correct && (correct.size || correct.length))) {
-        labeled += 1;
-        recall1 += recallAtK(kept, correct, 1);
-      }
-      if (!kept.length) fallback += 1;
+function aggregateRecallMetrics(rows = []) {
+  const ks = [1, 3, 5, 10, 20];
+  const out = {};
+  for (const k of ks) {
+    const vals = rows.map((r) => r[`recall_at_${k}`]).filter((v) => v != null);
+    out[`recall_at_${k}`] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  }
+  const mrrVals = rows.map((r) => r.mrr).filter((v) => v != null);
+  const ndcgVals = rows.map((r) => r.ndcg_at_10).filter((v) => v != null);
+  return {
+    sample_size: rows.length,
+    recall_at_1: out.recall_at_1,
+    recall_at_3: out.recall_at_3,
+    recall_at_5: out.recall_at_5,
+    recall_at_10: out.recall_at_10,
+    recall_at_20: out.recall_at_20,
+    mrr: mrrVals.length ? mrrVals.reduce((a, b) => a + b, 0) / mrrVals.length : 0,
+    ndcg_at_10: ndcgVals.length ? ndcgVals.reduce((a, b) => a + b, 0) / ndcgVals.length : 0,
+  };
+}
+
+function chunkReuseStats(retrievalRows = []) {
+  const counts = new Map();
+  for (const row of retrievalRows) {
+    for (const c of row.top20 || []) {
+      const id = c.chunk_id || c.id;
+      if (id) counts.set(id, (counts.get(id) || 0) + 1);
     }
-    const n = rows.length || 1;
+  }
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const never = retrievalRows.length
+    ? [...new Set(retrievalRows.flatMap((r) => (r.all_chunk_ids || [])))].filter((id) => !counts.has(id))
+    : [];
+  return {
+    unique_chunks_retrieved: counts.size,
+    top_reused: sorted.slice(0, 10).map(([chunk_id, hits]) => ({ chunk_id, hits })),
+    never_retrieved_in_audit: never.length,
+    chunk_diversity: counts.size / Math.max(retrievalRows.length, 1),
+  };
+}
+
+function simulateThresholdCurve(rows = [], thresholds = [0.5, 0.55, 0.6, 0.65, 0.7, 0.72, 0.75, 0.8]) {
+  return thresholds.map((threshold) => {
+    let grounded = 0;
+    let fallback = 0;
+    let hallucinationRisk = 0;
+    let top1Hit = 0;
+    let n = 0;
+    for (const row of rows) {
+      if (!row.has_labeled_relevant) continue;
+      n += 1;
+      const top = row.top20?.[0];
+      const topScore = top ? chunkScore(top) : 0;
+      const correctRank = rankOfCorrect(row.top20 || [], row.correct_chunk_ids);
+      const correctScore = correctRank ? chunkScore(row.top20[correctRank - 1]) : 0;
+      const wouldGround = topScore >= threshold && (row.correct_in_top1 ? topScore >= threshold : false);
+      const correctAbove = correctScore >= threshold && correctRank != null;
+      if (correctAbove) {
+        grounded += 1;
+        if (correctRank === 1) top1Hit += 1;
+      } else {
+        fallback += 1;
+        if (topScore >= threshold && !row.correct_in_top20) hallucinationRisk += 1;
+      }
+    }
     return {
-      threshold: th,
-      recall_at_1: labeled ? recall1 / labeled : 0,
-      fallback_rate: fallback / n,
-      labeled,
+      threshold,
+      grounded_rate: n ? grounded / n : 0,
+      fallback_rate: n ? fallback / n : 0,
+      top1_accuracy: n ? top1Hit / n : 0,
+      hallucination_risk_rate: n ? hallucinationRisk / n : 0,
+      sample_labeled: n,
     };
   });
 }
 
-function aggregateRecallMetrics(labeledRows = []) {
-  const n = labeledRows.length || 1;
-  const avg = (fn) => labeledRows.reduce((s, r) => s + fn(r), 0) / n;
-  return {
-    recall_at_1: avg((r) => r.recall_at_1 ?? recallAtK(r.top20 || [], r.correct_chunk_ids, 1)),
-    recall_at_5: avg((r) => r.recall_at_5 ?? recallAtK(r.top20 || [], r.correct_chunk_ids, 5)),
-    recall_at_20: avg((r) => r.recall_at_20 ?? recallAtK(r.top20 || [], r.correct_chunk_ids, 20)),
-    mrr: avg((r) => r.mrr ?? mrr(r.top20 || [], r.correct_chunk_ids)),
-    ndcg_at_5: avg((r) => r.ndcg_at_5 ?? ndcgAtK(r.top20 || [], r.correct_chunk_ids, 5)),
-    sample_size: labeledRows.length,
-  };
-}
-
-function chunkReuseStats(rows = []) {
-  const counts = new Map();
-  for (const row of rows) {
-    for (const c of row.top20 || []) {
-      const id = chunkId(c);
-      if (!id) continue;
-      counts.set(id, (counts.get(id) || 0) + 1);
-    }
-  }
-  const reused = [...counts.values()].filter((n) => n > 1).length;
-  return {
-    unique_chunks: counts.size,
-    reused_chunks: reused,
-    reuse_rate: counts.size ? reused / counts.size : 0,
-  };
-}
-
-/** Contadores runtime isolation / wrong-domain (in-memory). */
-const runtimeCounters = {
-  retrievals: 0,
-  wrong_domain: 0,
-  isolation_ok: 0,
-};
-
-function recordDomainIsolation({ expectedDomain, actualDomain } = {}) {
-  runtimeCounters.retrievals += 1;
-  if (!expectedDomain || !actualDomain) return;
-  if (expectedDomain === actualDomain) runtimeCounters.isolation_ok += 1;
-  else runtimeCounters.wrong_domain += 1;
-}
-
-function getDomainIsolationSnapshot() {
-  return { ...runtimeCounters };
-}
-
-function resetDomainIsolationCounters() {
-  runtimeCounters.retrievals = 0;
-  runtimeCounters.wrong_domain = 0;
-  runtimeCounters.isolation_ok = 0;
+function averageContextUtilization(selectedTokens = 0, maxTokens = 2500) {
+  return maxTokens > 0 ? selectedTokens / maxTokens : 0;
 }
 
 module.exports = {
   chunkScore,
-  chunkId,
   rankOfCorrect,
   recallAtK,
   mrr,
   ndcgAtK,
-  simulateThresholdCurve,
   aggregateRecallMetrics,
   chunkReuseStats,
-  recordDomainIsolation,
-  getDomainIsolationSnapshot,
-  resetDomainIsolationCounters,
+  simulateThresholdCurve,
+  averageContextUtilization,
 };

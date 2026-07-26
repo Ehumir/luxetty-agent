@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_100",
+  "scenario_version": 1,
+  "priority": "P2",
+  "family": "adversarial",
+  "category": "pack_fail_closed_property_qa",
+  "title": "Pack fail-closed PROPERTY_QA",
+  "description": "Sin pack/evidencia suficiente: fail-closed en PROPERTY_QA; no inventar.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "¿La LUX-10000 tiene roof garden y precio exacto con descuento?"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "property_qa_fail_closed": true,
+    "honest_unknown_when_unverified": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true,
+    "invent_amenity": true
+  },
+  "fixture": {
+    "context_pack_missing": true,
+    "property_code": "LUX-10000"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

@@ -8,6 +8,11 @@
 const { normalizeText, cleanSpaces } = require('../utils/text');
 const { isLikelyShortPersonNameToken } = require('./antiLoopGuardrails');
 const { formatPropertyTypeLabel } = require('../utils/formatting');
+const {
+  mentionsRentDemand,
+  mentionsBuyDemand,
+  isDemandSearchInbound,
+} = require('./v3/interpreter/campaignIntake');
 
 /**
  * Hilo de captación/venta protegido.
@@ -33,6 +38,8 @@ function isR0StickySaleCaptureThread(aiState = {}) {
 function explicitDemandSearchIntent(text = '') {
   const t = normalizeText(String(text || ''));
   if (!t) return false;
+  // Inventario / renta / compra explícitos (alineado con campaignIntake).
+  if (mentionsRentDemand(t) || mentionsBuyDemand(t) || isDemandSearchInbound(t)) return true;
   return (
     /\bbusco\b/.test(t) ||
     /\bbuscar\b/.test(t) ||
@@ -59,7 +66,18 @@ function applyR0StickySignalsGuard(previousAiState = {}, parsedSignals = {}, inb
   const sig = parsedSignals && typeof parsedSignals === 'object' ? { ...parsedSignals } : {};
   const prev = previousAiState && typeof previousAiState === 'object' ? previousAiState : {};
   if (!isR0StickySaleCaptureThread(prev)) return sig;
-  if (explicitDemandSearchIntent(inboundText)) return sig;
+  if (explicitDemandSearchIntent(inboundText)) {
+    // Rompe sticky: fuerza demanda y limpia candados de captación.
+    sig.lead_flow = 'demand';
+    delete sig.intent_lock_sale_owner;
+    delete sig.expected_price;
+    if (!sig.operation_type) {
+      const t = normalizeText(String(inboundText || ''));
+      if (mentionsRentDemand(t) || /\brentar?\b/.test(t)) sig.operation_type = 'rent';
+      else if (mentionsBuyDemand(t)) sig.operation_type = 'sale';
+    }
+    return sig;
+  }
 
   if (sig.lead_flow === 'demand') {
     delete sig.lead_flow;

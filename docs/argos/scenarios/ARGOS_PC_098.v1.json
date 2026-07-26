@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_098",
+  "scenario_version": 1,
+  "priority": "P2",
+  "family": "adversarial",
+  "category": "long_20_plus_turns",
+  "title": "Long conversation 20+ turns",
+  "description": "Conversación larga runnable: mantener zona/presupuesto; no reiniciar; no inventar.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Busco casa en Cumbres",
+    "Presupuesto 5 millones",
+    "¿Hay jardín?",
+    "¿Cuántos baños suelen tener?",
+    "Prefiero 3 recámaras",
+    "¿Estacionamiento techado?",
+    "Más cerca de avenida",
+    "¿Amenidades de alberca?",
+    "Ok sigue",
+    "¿Algo más nuevo?",
+    "Gracias",
+    "¿Y en Mitras?",
+    "Mejor Cumbres",
+    "3.5 a 5 millones está bien",
+    "Sin ruido",
+    "Con vigilancia",
+    "¿Me puedes comparar opciones?",
+    "La más barata",
+    "Ok",
+    "Me llamo Héctor",
+    "Sí, me puede contactar un asesor"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "intent": "buy",
+    "known_zone": "Cumbres",
+    "known_name": "Héctor",
+    "context_retained": true,
+    "min_turns": 20
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true,
+    "flow_restart": true
+  },
+  "human_review": {
+    "natural_flow_success": true,
+    "max_repeated_openings": 1
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

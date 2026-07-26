@@ -4,15 +4,16 @@ const { resolveQualificationFlowKey } = require('./flowKeys');
 
 /** @type {Record<string, string[]>} */
 const REQUIRED_SLOTS_BY_FLOW = Object.freeze({
-  sellOffer: ['full_name', 'location_text', 'expected_price', 'property_type', 'occupancy_status'],
-  rentOffer: ['full_name', 'location_text', 'expected_price', 'property_type', 'occupancy_status'],
+  // expected_price / occupancy soft: no bloquean CRM_READY con nombre+zona+tipo.
+  sellOffer: ['full_name', 'location_text', 'property_type'],
+  rentOffer: ['full_name', 'location_text', 'property_type'],
   buyDemand: ['full_name', 'location_text', 'budget', 'property_type_or_bedrooms'],
   rentDemand: ['full_name', 'location_text', 'budget'],
   propertyInquiryDemand: ['property_listing_code', 'full_name'],
 });
 
 const BUY_DEMAND_ORDER = ['full_name', 'location_text', 'budget', 'property_type_or_bedrooms'];
-const SELL_OFFER_ORDER = ['full_name', 'location_text', 'expected_price', 'property_type', 'occupancy_status'];
+const SELL_OFFER_ORDER = ['full_name', 'location_text', 'property_type', 'expected_price', 'occupancy_status'];
 
 /**
  * @param {import('../types/conversationState').ConversationState} state
@@ -21,6 +22,8 @@ function sellOfferPriceSatisfied(state) {
   if (state.expectedPrice != null) return true;
   if (state.valuationRequested === true || state.priceUnknown === true) return true;
   if (state.collectedFields?.valuationRequested === true) return true;
+  // Soft-ask: con nombre + zona el precio deja de bloquear CRM_READY.
+  if (state.collectedFields?.fullName && state.locationText) return true;
   return false;
 }
 
@@ -32,9 +35,8 @@ function getSellOfferMissingSlots(state) {
   const missing = [];
   if (!state.collectedFields?.fullName) missing.push('full_name');
   if (!state.locationText) missing.push('location_text');
-  if (!sellOfferPriceSatisfied(state)) missing.push('expected_price');
   if (!state.propertyType && !state.collectedFields?.propertyType) missing.push('property_type');
-  if (!state.occupancyStatus && !state.collectedFields?.occupancyStatus) missing.push('occupancy_status');
+  // Precio y ocupación: opcionales post-CRM (soft); no atrapan qualification.
   return missing;
 }
 

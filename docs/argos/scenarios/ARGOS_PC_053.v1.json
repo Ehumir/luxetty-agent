@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_053",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "visits",
+  "category": "visit_confirm_human",
+  "title": "Visit confirm humano",
+  "description": "Visit confirm humano — blocked until visits phase (F9). Never auto-confirm.",
+  "journey": "buyer",
+  "messages": [
+    "[advisor_confirm_visit]"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "visit_flow": true,
+    "never_auto_confirm": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true,
+    "auto_confirm_visit": true,
+    "visit_changes_lead_owner": true
+  },
+  "tags": [
+    "NOT_RUN_REQUIRES_F2"
+  ],
+  "gate": {
+    "status": "NOT_RUN_REQUIRES_F2",
+    "until_phase": "F9",
+    "reason": "Visit lifecycle requires F9"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

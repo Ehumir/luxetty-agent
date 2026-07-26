@@ -1,0 +1,35 @@
+{
+  "document": "PERSEO_RAG_F1A_BASELINE",
+  "version": "1",
+  "project_id": "pjoxytwsvbeoivppczdx",
+  "captured_at": "2026-07-22T19:00:00Z",
+  "phase": "F1A",
+  "root_cause": {
+    "summary": "After GLOBAL, demand traffic is mostly inventory_only; rag_query_logs only written on rules RAG path; skip telemetry gated by RAG_RC11_TELEMETRY_ENABLED so rag_retrieval events stopped 2026-07-07 while conversation_events overall continued.",
+    "fix": "Always emit skip + retrieval_turn_classification (independent of RC11 flag for minimal emit); do not fake rag_query_logs for inventory-only turns."
+  },
+  "pre": {
+    "rag_query_logs_count": 500,
+    "rag_query_logs_last_at": "2026-07-07T06:47:31.488924+00:00",
+    "rag_retrieval_events_total": 718,
+    "rag_retrieval_events_since_2026_07_08": 0,
+    "rag_retrieval_last_at": "2026-07-07T06:47:31.58423",
+    "conversation_events_since_2026_07_08": 130,
+    "conversation_events_last_at": "2026-07-22T17:44:06.869437",
+    "notes": "Other conversation_events types remain active after Jul 8; only rag_retrieval / rag_query_logs went quiet."
+  },
+  "post": {
+    "status": "PENDING_DEPLOY",
+    "deploy_branch_hint": "chore/reconcile-main-production-perseo-20260722 (or successor with F1A commits)",
+    "rag_query_logs_count": null,
+    "rag_query_logs_last_at": null,
+    "retrieval_turn_classification_since_deploy": null,
+    "rag_retrieval_events_since_deploy": null,
+    "measured_at": null
+  },
+  "config_candidates": {
+    "retention_days_events": null,
+    "sampling_rate_trajectory": null,
+    "note": "CONFIG_CANDIDATE_PENDING_BASELINE — do not freeze thresholds until post deploy"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_028",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "ownership",
+  "category": "tool_assignment_contradiction",
+  "title": "Tool assignment contradictoria",
+  "description": "Si tool sugiere assignment contradictoria, fail-closed a política.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Busco casa y quiero asesor X aunque el contacto es de Y"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "fail_closed_to_ownership_policy": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true,
+    "tool_overrides_ownership": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

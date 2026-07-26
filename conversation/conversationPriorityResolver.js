@@ -10,6 +10,11 @@ const { hasExplicitSellerKeywords } = require('./intent');
 const { extractPropertyCode } = require('./propertyIntentResolver');
 const { isExplicitHumanAdvisorRequest } = require('./humanEscalation');
 const r0 = require('./r0ContextContinuity');
+const {
+  mentionsRentDemand,
+  mentionsBuyDemand,
+  isDemandSearchInbound,
+} = require('./v3/interpreter/campaignIntake');
 
 const PRIORITY = Object.freeze({
   HUMAN: 1,
@@ -58,6 +63,7 @@ function isSocialReferenceText(text = '') {
 function isBuyerSearchText(text = '') {
   const t = normalizeText(String(text || ''));
   if (!t || hasExplicitSellerKeywords(t)) return false;
+  if (mentionsBuyDemand(t)) return true;
   return (
     /\bbusco\b/.test(t) ||
     t.includes('quiero comprar') ||
@@ -69,6 +75,8 @@ function isRentSearchText(text = '') {
   const t = normalizeText(String(text || ''));
   if (!t || hasExplicitSellerKeywords(t)) return false;
   if (t.includes('rentar mi') || t.includes('poner en renta')) return false;
+  // Alineado con campaignIntake.mentionsRentDemand (inventario / cert).
+  if (mentionsRentDemand(t)) return true;
   return (
     t.includes('quiero rentar') ||
     t.includes('busco renta') ||
@@ -81,10 +89,24 @@ function isGreetingOpeningText(text = '') {
   if (!raw) return false;
   if (isGreetingOnly(raw)) return true;
   const t = normalizeText(raw);
+  // Demanda clara (renta/compra/inventario) nunca es "solo saludo", aunque empiece con Hola.
+  if (isRentSearchText(t) || isBuyerSearchText(t) || isDemandSearchInbound(t)) return false;
   if (/^(hola|hey|hi|buenas|buenos dias|buenos días|buenas tardes|buenas noches)\b/.test(t) && t.length < 48) {
-    return !hasExplicitSellerKeywords(t) && !isMetaGeneralEntryText(t) && !isBuyerSearchText(t);
+    return !hasExplicitSellerKeywords(t) && !isMetaGeneralEntryText(t);
   }
   return false;
+}
+
+/** Demanda explícita de inventario: rompe sticky offer / greeting. */
+function isExplicitDemandSearchText(text = '') {
+  const t = normalizeText(String(text || ''));
+  if (!t || hasExplicitSellerKeywords(t)) return false;
+  return (
+    isRentSearchText(t) ||
+    isBuyerSearchText(t) ||
+    isDemandSearchInbound(t) ||
+    r0.explicitDemandSearchIntent(t)
+  );
 }
 
 /**
@@ -122,11 +144,43 @@ function resolvePriorityIntent(text = '', aiState = {}, parsedSignals = {}) {
     };
   }
 
+  // Demanda explícita ANTES de sticky offer: "Hola, casas en renta…" / "quiero rentar"
+  // no debe quedar atrapada en captación ni en menú greeting.
+  const rentDemand =
+    isRentSearchText(text) ||
+    (sig.operation_type === 'rent' && (sig.lead_flow === 'demand' || isDemandSearchInbound(text))) ||
+    (sig.lead_flow === 'demand' && sig.operation_type === 'rent');
+  const buyDemand =
+    isBuyerSearchText(text) ||
+    (sig.lead_flow === 'demand' && sig.operation_type === 'sale') ||
+    (sig.operation_type === 'sale' && mentionsBuyDemand(normalizeText(text)));
+
+  if (rentDemand && !hasExplicitSellerKeywords(text)) {
+    return {
+      priority: PRIORITY.RENT_SEARCH,
+      key: 'rent_search',
+      entry_type: 'buyer_search',
+      lead_flow: 'demand',
+      opening_type: 'rent_search',
+    };
+  }
+
+  if (buyDemand && !hasExplicitSellerKeywords(text)) {
+    return {
+      priority: PRIORITY.BUYER_SEARCH,
+      key: 'buyer_search',
+      entry_type: 'buyer_search',
+      lead_flow: 'demand',
+      opening_type: 'buyer_search',
+    };
+  }
+
   if (
     hasExplicitSellerKeywords(text) ||
-    sig.lead_flow === 'offer' ||
-    r0.isR0StickySaleCaptureThread(st) ||
-    st.intent_lock_sale_owner
+    (!isExplicitDemandSearchText(text) &&
+      (sig.lead_flow === 'offer' ||
+        r0.isR0StickySaleCaptureThread(st) ||
+        st.intent_lock_sale_owner))
   ) {
     return {
       priority: PRIORITY.SELLER_CAPTURE,
@@ -144,26 +198,6 @@ function resolvePriorityIntent(text = '', aiState = {}, parsedSignals = {}) {
       entry_type: 'meta_general_entry',
       lead_flow: null,
       opening_type: 'meta_general',
-    };
-  }
-
-  if (isBuyerSearchText(text) || (sig.lead_flow === 'demand' && sig.operation_type === 'sale')) {
-    return {
-      priority: PRIORITY.BUYER_SEARCH,
-      key: 'buyer_search',
-      entry_type: 'buyer_search',
-      lead_flow: 'demand',
-      opening_type: 'buyer_search',
-    };
-  }
-
-  if (isRentSearchText(text) || (sig.lead_flow === 'demand' && sig.operation_type === 'rent')) {
-    return {
-      priority: PRIORITY.RENT_SEARCH,
-      key: 'rent_search',
-      entry_type: 'buyer_search',
-      lead_flow: 'demand',
-      opening_type: 'rent_search',
     };
   }
 
@@ -211,9 +245,11 @@ function applyPriorityToSignals(parsedSignals = {}, text = '', previousAiState =
     sig.lead_flow = sig.lead_flow || 'demand';
     sig.property_specific_intent = true;
   } else if (resolved.key === 'buyer_search' || resolved.key === 'rent_search') {
-    if (!r0.isR0StickySaleCaptureThread(previousAiState)) {
-      sig.lead_flow = 'demand';
-    }
+    // Demanda explícita siempre gana sobre sticky offer (incidente 8119086196).
+    sig.lead_flow = 'demand';
+    delete sig.intent_lock_sale_owner;
+    if (resolved.key === 'rent_search' && !sig.operation_type) sig.operation_type = 'rent';
+    if (resolved.key === 'buyer_search' && !sig.operation_type) sig.operation_type = 'sale';
   }
 
   sig.__priority_intent = resolved;
@@ -227,6 +263,7 @@ module.exports = {
   isGreetingOpeningText,
   isBuyerSearchText,
   isRentSearchText,
+  isExplicitDemandSearchText,
   resolvePriorityIntent,
   applyPriorityToSignals,
 };

@@ -45,6 +45,17 @@ function leadWouldMaterialize(crm) {
   return !!(crm.lead.would_create_lead || crm.lead.would_reuse_lead);
 }
 
+/** CRM `supply` ≡ V3/flow `offer`; `demand` ≡ `demand`. */
+function leadTypesEquivalent(expected, actual) {
+  const e = String(expected || '').toLowerCase();
+  const a = String(actual || '').toLowerCase();
+  if (!e && !a) return true;
+  if (e === a) return true;
+  const supplyish = new Set(['offer', 'supply']);
+  if (supplyish.has(e) && supplyish.has(a)) return true;
+  return false;
+}
+
 function pickTurnDiagnostics(debugTrace = []) {
   const types = new Set([
     'parser_winner',
@@ -79,8 +90,10 @@ function collectExpectedViolations(expected, snapshot, panel, crm, violations, t
     }
   }
   if (expected.lead_type) {
-    const actualLead = panel?.lead_type || snapshot?.lead_flow || null;
-    if (actualLead !== expected.lead_type) {
+    // Preferir lead_flow conversacional: CRM dry-run puede quedar en supply tras sticky break.
+    const actualLead =
+      snapshot?.lead_flow || panel?.lead_type || null;
+    if (!leadTypesEquivalent(expected.lead_type, actualLead)) {
       violations.push({
         code: 'expected_lead_type_mismatch',
         expected: expected.lead_type,
@@ -732,4 +745,5 @@ module.exports = {
   collectExpectedViolations,
   contactWouldMaterialize,
   leadWouldMaterialize,
+  leadTypesEquivalent,
 };

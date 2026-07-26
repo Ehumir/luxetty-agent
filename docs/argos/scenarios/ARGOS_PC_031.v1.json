@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_031",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "handoff",
+  "category": "handoff_requested",
+  "title": "Handoff REQUESTED",
+  "description": "Usuario pide asesor humano; estado REQUESTED; topic no CLOSED.",
+  "journey": "buyer",
+  "messages": [
+    "Hola",
+    "Busco casa en Cumbres",
+    "Prefiero hablar con un asesor humano ya"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "handoff_state": "REQUESTED",
+    "topic_not_closed": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true,
+    "handoff_auto_closes_topic": true
+  },
+  "tags": [
+    "EXPECTED_FAIL_PRE_F2"
+  ],
+  "gate": {
+    "status": "EXPECTED_FAIL_PRE_F2",
+    "until_phase": "F2",
+    "reason": "Handoff state machine requires F2 control/handoff"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

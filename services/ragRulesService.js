@@ -1,6 +1,6 @@
 'use strict';
 
-const { isRagRulesEnabled } = require('../config/accP0Flags');
+const { isRagRulesEnabled, isRagDomainRoutingEnabled } = require('../config/accP0Flags');
 const ragService = require('./ragService');
 
 const RULES_DOMAINS = [
@@ -18,9 +18,17 @@ const RULES_RETRIEVAL_HINTS = {
     comisi: 'Objeción comisión\nLa comisión se explica con transparencia según política vigente',
     exclusiv: 'Objeción exclusiva\nLa exclusiva se presenta como beneficio de posicionamiento',
     valuaci: 'Objeción valuación\nLa valuación se basa en comparables de mercado',
+    vender: 'Captación venta propiedad propietario estrategia comercial',
+    captaci: 'Captación propiedad propietario listar vender casa',
+    tiempos: 'Objeción tiempos de venta plazos expectativas mercado',
+    honorarios: 'Objeción honorarios comisión transparencia',
   },
   assignment_rules: 'asignación ownership dueño contacto',
-  campaigns: 'campaña pauta meta',
+  campaigns: {
+    campa: 'Campaña marketing Meta pauta publicitaria redes sociales anuncios',
+    meta: 'Campaña Meta Facebook Instagram pauta publicitaria',
+    pauta: 'Pauta publicitaria campaña marketing digital',
+  },
   zones: 'zona colonia ubicación',
   rules_perseo: 'política reglas PERSEO no inventar',
   rules_atena: 'solicitud lead contacto ATENA',
@@ -66,6 +74,10 @@ function buildRulesRetrievalQuery(text, domain = null) {
     }
   }
 
+  if (domain === 'commercial_objections') {
+    return `Objeción comercial captación valuación propietario\n${base}`;
+  }
+
   return base;
 }
 
@@ -100,75 +112,31 @@ async function fetchRulesChunks(db, { query, domain = null, matchCount = 8 }, lo
 }
 
 /**
- * ContextPack de reglas — mismo filtro de dominio que fetchRulesChunks
- * (evita cross-domain grounding zones/scripts en objeciones).
+ * ContextPack de reglas (no modifica pipeline ni respuesta al usuario).
  */
-async function fetchRulesContextPack(db, { query, domain = null, logger = console } = {}) {
+async function fetchRulesContextPack(db, { query, domain = null, logger = console, domainAware = true } = {}) {
   if (!isRagRulesEnabled()) {
     return {
       contextPack: ragService.createContextPack({ fallback_used: true }),
       fallback: true,
-      domain_filter_applied: false,
     };
+  }
+
+  if (domainAware && isRagDomainRoutingEnabled()) {
+    const { fetchDomainAwareRulesContextPack } = require('../conversation/v3/rag/domainRetrievalOrchestrator');
+    return fetchDomainAwareRulesContextPack(db, { query, domain, logger });
   }
 
   const retrievalQuery = buildRulesRetrievalQuery(query, domain);
-  const chunkResult = await fetchRulesChunks(
-    db,
-    { query, domain, matchCount: 10 },
-    logger
-  );
 
-  if (chunkResult.fallback || !chunkResult.chunks?.length) {
-    return {
-      contextPack: ragService.createContextPack({ fallback_used: true }),
-      fallback: true,
-      domain_selected: domain || null,
-      domain_filter_applied: true,
-    };
-  }
-
-  const candidates = ragService.selectCandidates(chunkResult.chunks);
-  const thresholded = ragService.applyThresholds(candidates);
-  const { evaluateRetrieval } = require('../conversation/v3/rag/ragPolicy');
-  const evalResult = evaluateRetrieval(thresholded);
-
-  if (evalResult.fallback) {
-    return {
-      contextPack: ragService.createContextPack({ fallback_used: true }),
-      fallback: true,
-      domain_selected: domain || null,
-      domain_filter_applied: true,
-      evalResult,
-    };
-  }
-
-  const ctx = ragService.buildContext(thresholded);
-  const logId = await ragService.persistRagQueryLog(db, {
-    queryHash: chunkResult.query_hash,
-    filters: { domain, retrievalQuery },
-    resultsCount: ctx.chunks.length,
-    latencyMs: chunkResult.latency_ms || 0,
-    fallbackUsed: false,
-    citations: ragService.buildCitationsFromChunks(ctx.chunks),
+  return ragService.retrieveContextPack(db, {
+    query: retrievalQuery,
+    rpcName: 'match_knowledge_chunks',
+    rpcParams: buildKnowledgeChunksRpcParams({ matchCount: 10, domain }),
+    registryDomainFilter: domain || null,
+    allowedDomains: domain ? null : RULES_DOMAINS,
+    logger,
   });
-
-  const contextPack = ragService.createContextPack({
-    chunks: ctx.chunks,
-    confidence: evalResult.confidence,
-    fallback_used: false,
-    rag_query_log_id: logId,
-    latency_ms: chunkResult.latency_ms || 0,
-    budgetMeta: ctx,
-  });
-
-  return {
-    contextPack,
-    fallback: false,
-    domain_selected: domain || null,
-    domain_filter_applied: true,
-    evalResult,
-  };
 }
 
 module.exports = {

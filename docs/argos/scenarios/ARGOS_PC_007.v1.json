@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "ARGOS_PC_007",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "continuity",
+  "category": "closed_topic_ambiguous",
+  "title": "Tema CLOSED + mensaje ambiguo",
+  "description": "Mensaje corto tras CLOSED: no reabrir solo ni inventar slots.",
+  "journey": "buyer",
+  "messages": [
+    "ok",
+    "sí"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true
+  },
+  "expected": {
+    "no_silent_reopen": true,
+    "ask_clarify_or_reopen_prompt": true
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "use_requests_table": true
+  },
+  "tags": [
+    "EXPECTED_FAIL_PRE_F2"
+  ],
+  "gate": {
+    "status": "EXPECTED_FAIL_PRE_F2",
+    "until_phase": "F2",
+    "reason": "Topic CLOSED lifecycle handling requires F2"
+  },
+  "fixture": {
+    "topic_lifecycle": "CLOSED"
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-07-22",
+      "change": "Seed premium conversational matrix (Master Plan Anexo I)."
+    }
+  ]
+}

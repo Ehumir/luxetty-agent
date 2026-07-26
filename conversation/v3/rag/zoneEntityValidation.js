@@ -1,53 +1,126 @@
 'use strict';
 
 /**
- * RC11 — Validación entidad zona (bloquea colonias inventadas).
+ * RC-1.1 — Validación de entidad zona/colonia post-retrieval.
+ * Solo aplica cuando el query menciona una colonia/zona específica.
+ * Si ningún chunk citado contiene la entidad → evidencia inválida → fallback.
  */
 
-const { isRagRc11ZoneEntityValidationEnabled } = require('../../../config/accP0Flags');
-const { chunkScore } = require('./ragRetrievalMetrics');
+const GENERIC_STOPWORDS = new Set([
+  'zona',
+  'colonia',
+  'ubicacion',
+  'sector',
+  'donde',
+  'queda',
+  'info',
+  'informacion',
+  'busco',
+  'quiero',
+  'necesito',
+  'monterrey',
+  'nuevo',
+  'leon',
+  'mexico',
+  'municipio',
+  'fraccionamiento',
+  'fracc',
+]);
+
+function normalizeToken(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^a-z0-9]+/g, '');
+}
 
 /**
- * @returns {{ valid: boolean, reason: string|null, top: object|null }}
+ * Extrae tokens de entidad nombrada en consultas de zona/colonia.
+ * @param {string} query
+ * @returns {string[]}
  */
-function validateZoneEntityMatch(text, chunks = []) {
-  if (!isRagRc11ZoneEntityValidationEnabled()) {
-    return { valid: true, reason: 'flag_off', top: null };
-  }
+function extractZoneEntityTokens(query) {
+  const clean = String(query || '').replace(/\s+/g, ' ').trim();
+  const tokens = new Set();
 
-  const t = String(text || '');
-  const looksZone = /\bzona\b|\bcolonia\b|\bubicaci[oó]n\b/i.test(t);
-  if (!looksZone) {
-    return { valid: true, reason: null, top: null };
-  }
+  const patterns = [
+    /\b(?:zona|colonia|sector|fraccionamiento)\s+(?:de\s+la\s+|de\s+el\s+|de\s+)?([A-Za-zÁÉÍÓÚáéíóú0-9][A-Za-zÁÉÍÓÚáéíóú0-9\s.-]{2,60})/i,
+    /\ben\s+([A-Za-zÁÉÍÓÚáéíóú0-9][A-Za-zÁÉÍÓÚáéíóú0-9\s.-]{2,40})/i,
+  ];
 
-  const list = Array.isArray(chunks) ? [...chunks] : [];
-  list.sort((a, b) => chunkScore(b) - chunkScore(a));
-  const top = list[0] || null;
-
-  if (/inexistent|inventad|xyz-?\d+/i.test(t)) {
-    const score = top ? chunkScore(top) : 0;
-    if (!top || score < 0.72) {
-      return { valid: false, reason: 'inexistent_zone', top };
+  for (const re of patterns) {
+    const m = clean.match(re);
+    if (!m?.[1]) continue;
+    const segment = m[1].replace(/[.?!,]+$/g, '').replace(/\s+en\s+.+$/i, '').trim();
+    const full = normalizeToken(segment);
+    if (full.length >= 5 && !GENERIC_STOPWORDS.has(full)) {
+      tokens.add(full);
+    }
+    for (const part of segment.split(/[\s.-]+/)) {
+      const n = normalizeToken(part);
+      if (n.length >= 5 && !GENERIC_STOPWORDS.has(n)) {
+        tokens.add(n);
+      }
     }
   }
 
-  if (!top) {
-    return { valid: false, reason: 'no_zone_chunk', top: null };
+  return [...tokens];
+}
+
+function chunkHaystack(chunk) {
+  const meta = chunk?.metadata || {};
+  return normalizeToken(
+    [
+      chunk?.content,
+      chunk?.title,
+      meta.zone_name,
+      meta.colony,
+      meta.colonia,
+      meta.name,
+      meta.title,
+      meta.slug,
+    ]
+      .filter(Boolean)
+      .join(' ')
+  );
+}
+
+/**
+ * @param {string} query
+ * @param {object[]} chunks — chunks thresholded
+ * @returns {{ valid: boolean, reason: string, entity_tokens: string[], matched_count?: number }}
+ */
+function validateZoneEntityMatch(query, chunks) {
+  const entityTokens = extractZoneEntityTokens(query);
+  if (!entityTokens.length) {
+    return { valid: true, reason: 'no_specific_entity', entity_tokens: [] };
   }
 
-  const domain = top.registry_domain_code || top.source_type;
-  if (domain !== 'zones' && domain !== 'properties' && domain !== 'zone') {
-    return { valid: false, reason: 'wrong_domain_for_zone', top };
+  const list = Array.isArray(chunks) ? chunks : [];
+  if (!list.length) {
+    return { valid: false, reason: 'no_chunks', entity_tokens: entityTokens };
   }
 
-  if (chunkScore(top) < 0.45) {
-    return { valid: false, reason: 'low_zone_confidence', top };
+  const matched = list.filter((c) => {
+    const hay = chunkHaystack(c);
+    return entityTokens.some((t) => t.length >= 5 && hay.includes(t));
+  });
+
+  if (!matched.length) {
+    return { valid: false, reason: 'entity_not_in_citations', entity_tokens: entityTokens };
   }
 
-  return { valid: true, reason: null, top };
+  return {
+    valid: true,
+    reason: 'entity_matched',
+    entity_tokens: entityTokens,
+    matched_count: matched.length,
+  };
 }
 
 module.exports = {
+  extractZoneEntityTokens,
   validateZoneEntityMatch,
+  normalizeToken,
 };
