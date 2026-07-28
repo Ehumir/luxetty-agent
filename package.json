@@ -6,6 +6,7 @@
   "scripts": {
     "lint": "node scripts/lint.js",
     "test": "node --test",
+    "test:certification:isolated": "node scripts/test/run-isolated-certification.js",
     "test:regression": "node --test test/perseoRegression.test.js",
     "test:qa": "node --test test/qaCommands.test.js test/qaCommandsOrchestrator.test.js",
     "test:perseo": "node --test test/perseoRegression.test.js test/conversationRegression.test.js test/crmFlowRegression.test.js test/crmCreationAuditV2.test.js test/inboundReliability.test.js test/sprint3Playbooks.test.js test/propertyIntentResolver.test.js test/propertyConversationFlow.test.js test/perseoGatekeeper.test.js test/pautaDetection.test.js test/crmExecuteInboundGate.test.js test/followupCronOutbound.test.js test/spanishOutboundSanitizer.test.js test/sprint0cBlindaje.test.js test/inboundSourceClassifier.test.js test/qualifiedApplicantsV2.test.js",
