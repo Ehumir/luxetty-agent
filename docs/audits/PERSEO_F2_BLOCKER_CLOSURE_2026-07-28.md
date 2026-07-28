@@ -45,9 +45,10 @@ PostGIS. Production was not touched.
 
 ## Gates not claimable while the blocker remains
 
-- The three final green runs on one frozen commit have not been started. One
-  complete `176/176` discovery run exists, but it is not relabeled as a final
-  certification run.
+- Commit `9a3fdd1c695bd6ab46fb3d39d7d8d94da7bb6b88` completed three
+  consecutive green runs: `176/176 × 3`, with no timed-out, skipped or
+  excluded test files. A documentation-only successor commit must repeat this
+  gate before being called the frozen final candidate.
 - The empty-branch bootstrap has not passed twice; the repository still has
   demonstrated migration-history drift.
 - The existing F1A measurement is database retrieval only and does not yet
