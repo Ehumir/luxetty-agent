@@ -15,7 +15,8 @@ const read = (suffix) => {
 const topics = read("_f2_05_topics_and_events.sql");
 const batches = read("_f2_05_show_batches.sql");
 const ledgers = read("_f2_05_effect_ledgers.sql");
-const all = `${topics}\n${batches}\n${ledgers}`;
+const advisorFixes = read("_f2_05_advisor_fixes.sql");
+const all = `${topics}\n${batches}\n${ledgers}\n${advisorFixes}`;
 
 test("topics migration enforces one OPEN and idempotent append-only events", () => {
   assert.match(topics, /one_open_per_conversation[\s\S]*where status = 'OPEN'/i);
@@ -63,4 +64,24 @@ test("migrations are additive and bounded", () => {
   assert.doesNotMatch(all, /\btruncate\b/i);
   assert.match(all, /set lock_timeout = '5s'/i);
   assert.match(all, /set statement_timeout = '90s'/i);
+});
+
+test("advisor follow-up covers F2 foreign keys and removes redundant deny policy", () => {
+  for (const indexName of [
+    "conversations_assigned_agent_profile_idx",
+    "conversation_topics_parent_topic_idx",
+    "conversation_topic_events_evidence_message_idx",
+    "conversation_show_batches_outbound_message_idx",
+    "f2_effect_ledger_conversation_idx",
+    "f2_effect_ledger_inbound_message_idx",
+    "f2_effect_ledger_topic_idx",
+    "outbound_effect_ledger_conversation_idx",
+    "outbound_effect_ledger_inbound_message_idx",
+  ]) {
+    assert.match(advisorFixes, new RegExp(`create index if not exists ${indexName}`, "i"));
+  }
+  assert.match(
+    advisorFixes,
+    /drop policy if exists conversations_no_direct_access on public\.conversations/i,
+  );
 });
