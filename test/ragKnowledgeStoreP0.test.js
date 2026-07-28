@@ -7,7 +7,9 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const ROOT = path.join(__dirname, '..');
-const ATENA_ROOT = path.join(ROOT, '..', 'luxetty-atena');
+const ATENA_ROOT = process.env.ATENA_ROOT
+  ? path.resolve(process.env.ATENA_ROOT)
+  : path.join(ROOT, '..', 'luxetty-atena');
 const RAG_MIGRATION = path.join(ATENA_ROOT, 'supabase/migrations/20260706140000_rag_knowledge_store.sql');
 const PII_AUDIT_SQL = path.join(ATENA_ROOT, 'supabase/validation/rag_p0_no_pii_audit.sql');
 const CONTEXT_PACK_SCHEMA = path.join(ROOT, 'conversation/v3/rag/contextPackV1.schema.json');

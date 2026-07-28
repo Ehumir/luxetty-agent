@@ -30,6 +30,11 @@ const suites = Object.freeze({
     "test/ragService.test.js",
   ],
   f2: [
+    "test/f2CdcIdempotency.test.js",
+    "test/f2IntegrityClassification.test.js",
+    "test/f2OutboundIdempotency.test.js",
+    "test/f2RlsMigrationContract.test.js",
+    "test/f2StructuralMigrationsContract.test.js",
     "test/v3F21StateComposer.test.js",
     "test/v3F22Robustness.test.js",
     "test/v3F23Occupancy.test.js",

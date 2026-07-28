@@ -6,6 +6,8 @@
   "scripts": {
     "lint": "node scripts/lint.js",
     "test": "node --test",
+    "test:all-offline": "node scripts/test/run-full-offline-suite.js",
+    "test:all-offline:3x": "node scripts/test/run-full-offline-suite.js --repeat=3",
     "test:certification:isolated": "node scripts/test/run-isolated-certification.js",
     "test:unit": "node scripts/test/run-classified-suite.js unit",
     "test:contracts": "node scripts/test/run-classified-suite.js contracts",

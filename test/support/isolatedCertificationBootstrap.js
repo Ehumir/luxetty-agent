@@ -24,8 +24,15 @@ for (const name of [
 
 dotenv.config = () => ({ parsed: {} });
 
-globalThis.fetch = async () => {
-  throw new Error("network_disabled_in_isolated_certification");
+const nativeFetch = globalThis.fetch;
+globalThis.fetch = async (input, init) => {
+  const url = new URL(
+    typeof input === "string" || input instanceof URL ? input : input.url,
+  );
+  if (["127.0.0.1", "localhost", "::1"].includes(url.hostname)) {
+    return nativeFetch(input, init);
+  }
+  throw new Error(`network_disabled_in_isolated_certification:${url.hostname}`);
 };
 
 process.env.PERSEO_TEST_ISOLATED = "true";
