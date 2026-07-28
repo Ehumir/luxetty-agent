@@ -71,7 +71,9 @@ describe('V3-F2.3 QA script occupancy anti-loop', () => {
     assert.equal(last.state.conversationStage, CONVERSATION_STAGES.READY_FOR_CRM);
 
     const reply = String(last.reply);
-    assert.match(reply, /Tomé que la propiedad está libre/i);
+    // Contract is semantic, not frozen copy. Both the legacy acknowledgement
+    // and the current consultive close must explicitly confirm "libre".
+    assert.match(reply, /(?:Tomé que |la )propiedad está libre/i);
     assert.doesNotMatch(reply, /habitada, rentada o libre/i);
 
     const summary = formatStateSummary({}, legacy);
