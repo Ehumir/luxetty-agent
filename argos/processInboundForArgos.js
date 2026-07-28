@@ -411,11 +411,11 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
     crm_skip_reason: crmGate.eligible ? null : crmGate.reason,
   };
 
-  // Deterministic ARGOS: skip async runtime writes, but keep CRM dry-run preview for gate tests.
-  const skipCrmRuntimeSideEffects = isDeterministicMode(flags);
-
   let crm_runtime_out = null;
-  if (!skipCrmRuntimeSideEffects && isCrmRuntimePersistentEnabled() && v3State) {
+  // ARGOS always resolves the persistent runtime to its in-memory store.
+  // Running this path in deterministic mode is required to exercise queue,
+  // worker and idempotency contracts without touching CRM tables.
+  if (isCrmRuntimePersistentEnabled() && v3State) {
     const supabaseRaw = input.supabaseRaw;
     crm_runtime_out = await executeV3CrmIfEligible({
       v3State,

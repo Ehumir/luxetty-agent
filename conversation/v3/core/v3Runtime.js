@@ -420,6 +420,21 @@ function processV3Turn(input) {
   }
 
   const { state: nextState, guard } = applyV3StateTransition(state, patchWithStreak, decision);
+  const policyShouldShortCircuit =
+    policyCrossLayer &&
+    shouldShortCircuitPolicy({ layer: policyCrossLayer, state: nextState, text: effectiveText });
+  const withPolicyMetadata = (candidateState) => {
+    if (!policyCrossLayer || !isPolicyEngineEnabled()) return candidateState;
+    return {
+      ...candidateState,
+      lastPolicyDecision: policyCrossLayer.policyResult?.decision || null,
+      lastPolicyRuleId: policyCrossLayer.policyResult?.rule_id || null,
+      lastPolicyRuntimeApplied: policyCrossLayer.policyResult?.policy_runtime_applied === true,
+      lastPolicyRuntimeRuleId: policyCrossLayer.policyResult?.policy_runtime_rule_id || null,
+      lastSegments: policyCrossLayer.segments || null,
+      lastResponsePlan: policyCrossLayer.responsePlan || null,
+    };
+  };
 
   const icfLeadId = nextState.crmLeadId || state.crmLeadId || null;
   if (icfLeadId) {
@@ -432,6 +447,7 @@ function processV3Turn(input) {
   }
 
   if (
+    !policyShouldShortCircuit &&
     (isLandingCaptureActive(nextState) || decision.detectedIntent === V3_INTENT.LANDING_CAPTURE) &&
     (decision.landingCaptureReply || decision.landingCaptureHandoff)
   ) {
@@ -445,7 +461,12 @@ function processV3Turn(input) {
           decision,
           'landing_capture_fallback',
         );
-        const fin = finalizeAssistantTurn(handoffState, landingReply, effectiveText, decision);
+        const fin = finalizeAssistantTurn(
+          withPolicyMetadata(handoffState),
+          landingReply,
+          effectiveText,
+          decision,
+        );
         const landingFin = applyM4RuntimeFinishing(fin.state, {
           effectiveText,
           replyText: fin.reply,
@@ -471,7 +492,12 @@ function processV3Turn(input) {
           telemetryResult: landingFin.telemetryResult,
         };
       }
-      const fin = finalizeAssistantTurn(nextState, landingReply, effectiveText, decision);
+      const fin = finalizeAssistantTurn(
+        withPolicyMetadata(nextState),
+        landingReply,
+        effectiveText,
+        decision,
+      );
       const landingFin = applyM4RuntimeFinishing(fin.state, {
         effectiveText,
         replyText: fin.reply,
@@ -494,7 +520,7 @@ function processV3Turn(input) {
     }
   }
 
-  if (policyCrossLayer && shouldShortCircuitPolicy({ layer: policyCrossLayer, state: nextState, text: effectiveText })) {
+  if (policyShouldShortCircuit) {
     const policyReply = buildPolicyShortCircuitReply({
       layer: policyCrossLayer,
       state: nextState,
@@ -582,7 +608,12 @@ function processV3Turn(input) {
       reason: forcedReason,
       userText: effectiveText,
     });
-    const fin = finalizeAssistantTurn(forced.state, forced.replyText, effectiveText, decision);
+    const fin = finalizeAssistantTurn(
+      withPolicyMetadata(forced.state),
+      forced.replyText,
+      effectiveText,
+      decision,
+    );
     const forcedFin = applyM4RuntimeFinishing(fin.state, {
       effectiveText,
       replyText: fin.reply,
@@ -616,11 +647,12 @@ function processV3Turn(input) {
       decision,
       reason: 'rule_guard_violation',
     });
-    setSession(conversationId, forced.state);
+    const forcedState = withPolicyMetadata(forced.state);
+    setSession(conversationId, forcedState);
     return {
       ok: true,
       reply: forced.replyText,
-      state: forced.state,
+      state: forcedState,
       decision,
       guard,
       responseSource: forced.responseSource,

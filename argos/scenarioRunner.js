@@ -29,6 +29,7 @@ function createIsolatedReadClient() {
       select() { return builder; },
       eq() { return builder; },
       neq() { return builder; },
+      ilike() { return builder; },
       in() { return builder; },
       is() { return builder; },
       not() { return builder; },
@@ -36,6 +37,8 @@ function createIsolatedReadClient() {
       order() { return builder; },
       limit() { return builder; },
       range() { return builder; },
+      lte() { return builder; },
+      gte() { return builder; },
       async maybeSingle() { return { data: null, error: null }; },
       async single() { return { data: null, error: null }; },
       then(resolve, reject) {

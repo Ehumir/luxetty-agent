@@ -262,7 +262,7 @@ async function getWhatsAppMediaMetadata(mediaId, options = {}) {
 
   try {
     const response = await httpClient.get(`${GRAPH_BASE_URL}/${encodeURIComponent(mediaId)}`, {
-      headers: getAuthHeaders(),
+      headers: options.skipAuth === true ? {} : getAuthHeaders(),
       timeout,
       validateStatus: (status) => status >= 200 && status < 300,
     });
@@ -289,7 +289,7 @@ async function downloadWhatsAppMedia(mediaUrl, options = {}) {
 
   try {
     const response = await httpClient.get(mediaUrl, {
-      headers: getAuthHeaders(),
+      headers: options.skipAuth === true ? {} : getAuthHeaders(),
       timeout,
       responseType: 'arraybuffer',
       maxContentLength: maxBytes,

@@ -71,7 +71,9 @@ function matchesLandingCaptureInbound(input) {
   if (/prevaluaci[oó]n/.test(text)) score += 1;
   if (/cumbres|zona\s+poniente/.test(text)) score += 1;
   if (/propiedad/.test(text) && /(cumbres|poniente|colonia|zona)/.test(text)) score += 1;
-  if (/\b(mi\s+)?casa\b/.test(text) && /cumbres/.test(text)) score += 2;
+  // La sola combinación "mi casa" + "Cumbres" es captación orgánica, no
+  // evidencia de que el usuario llegó desde la landing/campaña. La señal
+  // geográfica de arriba sólo puede completar otra señal explícita de campaña.
   if (/venta\s+o\s+renta|mejor\s+opci[oó]n/.test(text)) score += 1;
   if (/campa[nñ]a\s+de\s+prevaluaci[oó]n/.test(text)) score += 2;
   if (/hola\s+luxetty/.test(text)) score += 1;

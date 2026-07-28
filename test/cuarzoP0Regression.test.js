@@ -142,7 +142,9 @@ describe('Cuarzo P0 — regresión conversacional', () => {
       contact: { first_name: 'Cliente', last_name: '' },
       outboundHistory: [advisor.assistantText],
     });
-    assert.match(okTurn.assistantText, /asesor de Luxetty/i);
+    // Ya hubo handoff y hold; el tercer ACK debe quedar en silencio para no
+    // duplicar mensajes ni reabrir calificación.
+    assert.equal(okTurn.assistantText, '');
     assert.doesNotMatch(okTurn.assistantText, /tipo de inmueble|habitada|nombre/i);
   });
 });

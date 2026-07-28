@@ -40,33 +40,44 @@ async function runReplayPack(pack, opts = {}) {
   let session_id = null;
   let lastSnapshot = null;
   const violations = [];
+  const previousV3Enabled = process.env.PERSEO_V3_ENABLED;
+  const previousArgosEnabled = process.env.PERSEO_ARGOS_ENABLED;
+  process.env.PERSEO_V3_ENABLED = 'true';
+  process.env.PERSEO_ARGOS_ENABLED = 'true';
 
-  for (let i = 0; i < (pack.turns || []).length; i += 1) {
-    const turn = pack.turns[i];
-    const result = await processInboundForArgos({
-      session_id,
-      phone_sim: phone,
-      text: turn.text || '',
-      media: turn.media || null,
-      flags,
-    });
-    session_id = result.session_id;
-    lastSnapshot = result.conversation_snapshot;
-    turns.push({
-      index: i + 1,
-      user: turn.text,
-      reply: result.reply,
-      snapshot: lastSnapshot,
-      ok: !result.error_code,
-    });
+  try {
+    for (let i = 0; i < (pack.turns || []).length; i += 1) {
+      const turn = pack.turns[i];
+      const result = await processInboundForArgos({
+        session_id,
+        phone_sim: phone,
+        text: turn.text || '',
+        media: turn.media || null,
+        flags,
+      });
+      session_id = result.session_id;
+      lastSnapshot = result.conversation_snapshot;
+      turns.push({
+        index: i + 1,
+        user: turn.text,
+        reply: result.reply,
+        snapshot: lastSnapshot,
+        ok: !result.error_code,
+      });
 
-    if (turn.expected) {
-      for (const [key, val] of Object.entries(turn.expected)) {
-        if (lastSnapshot?.[key] !== val && lastSnapshot?.[key] != val) {
-          violations.push({ turn: i + 1, key, expected: val, actual: lastSnapshot?.[key] });
+      if (turn.expected) {
+        for (const [key, val] of Object.entries(turn.expected)) {
+          if (lastSnapshot?.[key] !== val && lastSnapshot?.[key] != val) {
+            violations.push({ turn: i + 1, key, expected: val, actual: lastSnapshot?.[key] });
+          }
         }
       }
     }
+  } finally {
+    if (previousV3Enabled === undefined) delete process.env.PERSEO_V3_ENABLED;
+    else process.env.PERSEO_V3_ENABLED = previousV3Enabled;
+    if (previousArgosEnabled === undefined) delete process.env.PERSEO_ARGOS_ENABLED;
+    else process.env.PERSEO_ARGOS_ENABLED = previousArgosEnabled;
   }
 
   return {
