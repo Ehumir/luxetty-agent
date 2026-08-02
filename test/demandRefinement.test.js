@@ -36,5 +36,11 @@ describe('demandRefinement', () => {
     state.propertyListingCode = 'LUX-A0461';
     const code = resolvePropertyReferenceCode(state, '¿cuál era el precio de la primera?');
     assert.equal(code, 'LUX-A0470');
+
+    state.showBatch = [{ code: 'LUX-A0461' }, { code: 'LUX-A0462' }];
+    assert.equal(resolvePropertyReferenceCode(state, 'la segunda'), 'LUX-A0462');
+    assert.equal(resolvePropertyReferenceCode(state, 'esa casa'), null);
+    state.showBatch = [{ code: 'LUX-A0461' }];
+    assert.equal(resolvePropertyReferenceCode(state, 'esa casa'), 'LUX-A0461');
   });
 });

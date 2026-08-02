@@ -9,6 +9,8 @@ const {
   releaseStickyContext,
 } = require('../conversation/v3/ownership/stickyContext');
 const { CONVERSATION_GOALS } = require('../conversation/v3/types/constants');
+const { createInitialConversationState } = require('../conversation/v3/types/conversationState');
+const { mergeEffectiveRuntimeState } = require('../conversation/v3/state/effectiveStateMerge');
 
 describe('v3StickyContext', () => {
   it('stamps sticky fields on goal lock', () => {
@@ -21,6 +23,20 @@ describe('v3StickyContext', () => {
     stampStickyContext(patch);
     assert.equal(patch.stickyLeadFlow, 'offer');
     assert.equal(patch.stickyOperationType, 'sale');
+
+    const base = createInitialConversationState({ conversationId: 'merge-protected' });
+    base.operationType = 'sale';
+    base.locationText = 'Cumbres';
+    base.collectedFields.fullName = 'Jorge';
+    const weak = mergeEffectiveRuntimeState(
+      base,
+      { operationType: 'rent', locationText: null, collectedFields: { fullName: '' } },
+      { source: 'classifier_inference', confidence: 0.4, reason: 'weak_classifier' },
+    );
+    assert.equal(weak.operationType, 'sale');
+    assert.equal(weak.locationText, 'Cumbres');
+    assert.equal(weak.collectedFields.fullName, 'Jorge');
+    assert.equal(weak.rejectedStateMutations.length, 3);
   });
 
   it('blocks offer to demand flip without explicit switch', () => {
@@ -56,6 +72,19 @@ describe('v3StickyContext', () => {
     );
     assert.equal(out.leadFlow, 'demand');
     assert.equal(out.stickyLeadFlow, null);
+
+    const base = createInitialConversationState({ conversationId: 'merge-explicit' });
+    base.operationType = 'sale';
+    const changed = mergeEffectiveRuntimeState(base, { operationType: 'rent' }, {
+      source: 'customer_current_turn',
+      confidence: 0.95,
+      reason: 'customer_explicitly_requested_rent',
+      explicitFields: ['operationType'],
+    });
+    assert.equal(changed.operationType, 'rent');
+    assert.equal(changed.lastStateMutation.previous_value, 'sale');
+    assert.equal(changed.lastStateMutation.new_value, 'rent');
+    assert.equal(changed.lastStateMutation.reason, 'customer_explicitly_requested_rent');
   });
 
   it('allows buy patch when explicitFlowSwitch after sell sticky', () => {

@@ -124,19 +124,30 @@ async function fetchRulesContextPack(db, { query, domain = null, logger = consol
 
   if (domainAware && isRagDomainRoutingEnabled()) {
     const { fetchDomainAwareRulesContextPack } = require('../conversation/v3/rag/domainRetrievalOrchestrator');
-    return fetchDomainAwareRulesContextPack(db, { query, domain, logger });
+    const result = await fetchDomainAwareRulesContextPack(db, { query, domain, logger });
+    return {
+      ...result,
+      domain_filter_applied: Boolean(domain),
+      domain_selected: result.routing?.domain_selected || domain || null,
+    };
   }
 
   const retrievalQuery = buildRulesRetrievalQuery(query, domain);
 
-  return ragService.retrieveContextPack(db, {
+  const result = await ragService.retrieveContextPack(db, {
     query: retrievalQuery,
     rpcName: 'match_knowledge_chunks',
     rpcParams: buildKnowledgeChunksRpcParams({ matchCount: 10, domain }),
     registryDomainFilter: domain || null,
     allowedDomains: domain ? null : RULES_DOMAINS,
+    searchFn: ragService.semanticSearch,
     logger,
   });
+  return {
+    ...result,
+    domain_filter_applied: Boolean(domain),
+    domain_selected: domain || null,
+  };
 }
 
 module.exports = {

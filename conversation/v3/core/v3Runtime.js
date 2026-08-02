@@ -1,6 +1,7 @@
 'use strict';
 
 const { createInitialConversationState, mergeConversationState } = require('../types/conversationState');
+const { mergeEffectiveRuntimeState } = require('../state/effectiveStateMerge');
 const { interpretUserMessage } = require('../interpreter/minimalInterpreter');
 const { applyV3StateTransition } = require('../state/stateManager');
 const { composeHumanReplyText, composeHumanResponse } = require('../composer/humanComposer');
@@ -195,7 +196,12 @@ function processV3Turn(input) {
       }
     }
     if (!Object.keys(hyd).length) return base;
-    return mergeConversationState(base, hyd);
+    return mergeEffectiveRuntimeState(base, hyd, {
+      source: 'authorized_turn_inventory',
+      confidence: 1,
+      reason: 'validated_inventory_hydration',
+      explicitFields: ['propertyListingCode', 'activeProperty'],
+    });
   }
 
   let state = isSessionDbReadthroughEnabled()
@@ -256,7 +262,11 @@ function processV3Turn(input) {
     decision: {},
   });
   if (understandingRuntime?.patch) {
-    state = mergeConversationState(state, understandingRuntime.patch);
+    state = mergeEffectiveRuntimeState(state, understandingRuntime.patch, {
+      source: 'classifier_inference',
+      confidence: understandingRuntime.metrics?.confidence || 0.6,
+      reason: 'understanding_runtime_inference',
+    });
     setSession(conversationId, state);
     if (understandingRuntime.patch.lastFusedUserText) {
       effectiveText = understandingRuntime.patch.lastFusedUserText;

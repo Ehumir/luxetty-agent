@@ -36,7 +36,14 @@ function getSellOfferMissingSlots(state) {
   if (!state.collectedFields?.fullName) missing.push('full_name');
   if (!state.locationText) missing.push('location_text');
   if (!state.propertyType && !state.collectedFields?.propertyType) missing.push('property_type');
-  // Precio y ocupación: opcionales post-CRM (soft); no atrapan qualification.
+  // En una valuación sin precio, la ocupación es un dato material antes de
+  // declarar CRM_READY; evita cerrar como completo un intake aún incompleto.
+  if (
+    state.valuationRequested === true &&
+    !(state.occupancyStatus || state.collectedFields?.occupancyStatus)
+  ) {
+    missing.push('occupancy_status');
+  }
   return missing;
 }
 

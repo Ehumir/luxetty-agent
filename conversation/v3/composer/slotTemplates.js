@@ -628,7 +628,7 @@ function composePropertyLookupMiss(state = {}) {
   const code = cleanSpaces(String(st.propertyListingCode || ''));
   const ref = code ? `la referencia ${code}` : 'ese código';
   return {
-    responseText: `No encuentro ${ref} en inventario publicado por este canal, así que no invento precio ni ficha. ¿Puedes confirmar el código completo (ej. LUX-A0470) o prefieres que busquemos por zona y presupuesto?`,
+    responseText: `No encuentro ${ref} en inventario publicado por este canal, así que no invento precio ni ficha. ¿Puedes confirmar el código completo o prefieres que busquemos por zona y presupuesto?`,
     followUpQuestion: null,
     awaitingField: null,
     toneFlags: { consultive: true, propertyMiss: true },
@@ -721,9 +721,8 @@ function composePropertyFactReply(state, family) {
       const hist = Array.isArray(st.propertyHistory) ? st.propertyHistory : [];
       const prev = hist.find((h) => h && h.code && h.code !== code);
       const other = prev?.code || hist[0]?.code || null;
-      const otherRef = other ? ` (antes viste ${other})` : '';
       return {
-        responseText: `${greet}Para comparar, tomo ${ref} como referencia actual${otherRef}. Aún no tengo otras fichas publicables similares en este hilo; dime zona o presupuesto y busco opciones reales con enlace.`,
+        responseText: `${greet}Tomo ${ref} como referencia actual. Aún no tengo otras fichas publicables similares autorizadas en este hilo; dime zona o presupuesto y busco opciones reales con enlace.`,
         followUpQuestion: null,
         awaitingField: null,
         toneFlags: { consultive: true, propertyCompare: true },

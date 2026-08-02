@@ -223,12 +223,13 @@ function buildContext(chunks = []) {
 }
 
 function buildCitationsFromChunks(chunks = []) {
-  return chunks.map((c) => ({
+  return chunks.map((c, index) => ({
     source_type: c.source_type,
     source_id: c.source_id,
     chunk_id: c.chunk_id || c.id,
     registry_domain_code: c.registry_domain_code || c.metadata?.registry_domain_code || null,
     score: Number(c.similarity ?? c.score ?? 0),
+    rank: index + 1,
     excerpt: String(c.content || '').slice(0, 200),
   }));
 }
@@ -351,6 +352,7 @@ async function retrieveContextPack(
     minScore = DEFAULT_MIN_SCORE,
     registryDomainFilter = null,
     allowedDomains = null,
+    searchFn = semanticSearch,
   } = {}
 ) {
   const start = Date.now();
@@ -360,7 +362,7 @@ async function retrieveContextPack(
 
   try {
     const search = await withTimeout(
-      semanticSearch(db, { query, rpcName, rpcParams, logger }),
+      searchFn(db, { query, rpcName, rpcParams, logger }),
       RAG_TIMEOUT_MS,
       'rag_total'
     );

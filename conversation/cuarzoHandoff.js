@@ -119,6 +119,18 @@ function resolvePostHandoffTurn({ previousAiState = {}, nextAiState = {}, text =
     return { handled: false };
   }
 
+  // El gate superior de conversation_mode bloquea este camino en tráfico real
+  // HUMAN_WAITING/HUMAN. En el harness legacy, reiterar “asesor” no consume el
+  // único ACK terminal que sigue al consentimiento.
+  if (/\b(?:mejor|quiero|necesito|atienda|atender)\b.*\basesor(?:a)?\b/i.test(normalizeText(text))) {
+    return {
+      handled: true,
+      reply: 'Ya quedó canalizado con un asesor de Luxetty.',
+      statePatch: { awaiting_field: null },
+      responseSource: 'cuarzo_handoff_request_reaffirmed',
+    };
+  }
+
   // Rechazo a bot / insistencia en humano: silencio total
   if (isBotRejectionTextLocal(text)) {
     return {
