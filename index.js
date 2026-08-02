@@ -1527,6 +1527,7 @@ app.post('/webhook', async (req, res) => {
         text,
         message,
         campaignContext,
+        property,
         previousAiState,
         parsedSignals,
       });
@@ -2267,4 +2268,3 @@ module.exports = {
     fetchPropertyByListingCode,
   },
 };
-
