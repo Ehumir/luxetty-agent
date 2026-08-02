@@ -710,6 +710,50 @@ async function runCleanOrchestratorCrmPhase({
   propertyId = null,
   crmGateContext = null,
 }) {
+  const p0Crm = require('./services/perseoP0Crm');
+  const p0Result = await p0Crm.commitP0CrmIntake({
+    supabase: db,
+    conversationId,
+    conversationRow,
+    aiState: nextAiState,
+    parsedSignals,
+    text,
+    property,
+    propertyId,
+    phone: from,
+    waProfileName,
+    rawPayload,
+  });
+  if (p0Result.handled) {
+    if (typeof crmGateContext?.logEvent === 'function') {
+      crmGateContext.logEvent(
+        p0Result.success ? 'p0_crm_committed' : 'p0_crm_fail_closed',
+        {
+          conversation_id: conversationId,
+          reason: p0Result.reason || null,
+          request_id: p0Result.result?.request_id || null,
+          contact_id: p0Result.result?.contact_id || null,
+          lead_id: p0Result.result?.lead_id || null,
+          replayed: p0Result.result?.replayed === true,
+          campaign_property_stripped: p0Result.strippedCampaignProperty === true,
+        },
+      );
+    }
+    return {
+      hasIntent: true,
+      canEnsureContact: p0Result.success,
+      contactId: p0Result.result?.contact_id || null,
+      leadResult: p0Result.success ? {
+        success: true,
+        leadId: p0Result.result?.lead_id || null,
+        requestId: p0Result.result?.request_id || null,
+        wasCreated: p0Result.result?.lead_created === true,
+      } : null,
+      p0Result,
+      failClosed: p0Result.failClosed === true,
+    };
+  }
+
   const resolvedPropertyId = propertyId != null ? propertyId : property?.id || null;
   const {
     shouldAllowCrmExecuteForInbound,
@@ -838,6 +882,7 @@ app.get('/webhook', (req, res) => {
 
 app.post('/webhook', async (req, res) => {
   const webhookStart = Date.now();
+  let turnTrace = null;
   try {
     const { value, message } = extractInboundMessage(req.body);
     if (!message) {
@@ -891,6 +936,14 @@ app.post('/webhook', async (req, res) => {
     }
 
     const previousAiState = normalizeAiState(conversationRow?.ai_state);
+    turnTrace = require('./services/perseoTurnTrace').startTurnTrace({
+      conversationId,
+      inboundMessageId: metaMessageId,
+      text,
+      aiState: previousAiState,
+      conversationRow,
+      startedAt: webhookStart,
+    });
 
     await saveConversationEvent(conversationId, 'conversation_resolved', {
       conversation_id: conversationId,
@@ -1234,6 +1287,7 @@ app.post('/webhook', async (req, res) => {
     let skipOutboundSend = false;
     let selectedPipeline = 'legacy';
     let openingMetrics = null;
+    let legacyCrmResult = null;
 
     if (policy.allowAutomatedReply) {
       const cuarzoHandoff = require('./conversation/cuarzoHandoff');
@@ -2142,7 +2196,7 @@ app.post('/webhook', async (req, res) => {
     await persistCrmExecuteGateEvent(saveConversationEvent, conversationId, crmExecuteGate);
 
     if (!skipLegacyCrm && crmExecuteGate.crm_execute_allowed) {
-      await runCleanOrchestratorCrmPhase({
+      legacyCrmResult = await runCleanOrchestratorCrmPhase({
         supabase,
         conversationId,
         conversationRow,
@@ -2161,6 +2215,18 @@ app.post('/webhook', async (req, res) => {
           logEvent,
         },
       });
+      if (legacyCrmResult?.failClosed) {
+        const { FAIL_CLOSED_REPLY } = require('./services/perseoP0Crm');
+        reply = FAIL_CLOSED_REPLY;
+        responseSource = 'p0_crm_fail_closed';
+        Object.assign(nextAiState, {
+          conversation_mode: 'HUMAN_WAITING',
+          handoff_sent: true,
+          handoff_reason: legacyCrmResult.p0Result?.reason || 'crm_integrity_conflict',
+          p0_crm_fail_closed: true,
+        });
+        await saveConversationState(conversationId, nextAiState);
+      }
     } else if (!skipLegacyCrm) {
       logEvent('legacy_crm_execute_skipped', {
         conversation_id: conversationId,
@@ -2175,6 +2241,21 @@ app.post('/webhook', async (req, res) => {
     const outboundText = Array.isArray(reply)
       ? reply.map((s) => String(s || '').trim()).filter(Boolean).join('\n\n')
       : cleanSpaces(String(reply || ''));
+    await require('./services/perseoTurnTrace').persistTerminalTurn(supabase, turnTrace, {
+      stateAfter: nextAiState,
+      reply,
+      responseSource,
+      selectedPipeline,
+      crmResult: legacyCrmResult,
+      terminalResult: skipOutboundSend || !outboundText ? 'skipped' : 'sent',
+      skip: skipOutboundSend || !outboundText,
+      flags: {
+        p0_crm_recovery: process.env.PERSEO_P0_CRM_RECOVERY_ENABLED === 'true',
+        v3_enabled: process.env.PERSEO_V3_ENABLED === 'true',
+        rag_enabled: process.env.PERSEO_RAG_ENABLED === 'true',
+      },
+      model: String(responseSource || '').includes('engine') ? process.env.OPENAI_MODEL || null : null,
+    });
     if (skipOutboundSend || !outboundText) {
       logEvent('perseo_outbound_skipped', {
         conversation_id: conversationId,
@@ -2218,6 +2299,14 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
   } catch (err) {
     console.error('webhook_post_fatal', err);
+    try {
+      await require('./services/perseoTurnTrace').persistTerminalTurn(supabase, turnTrace, {
+        terminalResult: 'failed',
+        error: err,
+      });
+    } catch (_traceErr) {
+      /* terminal trace is best-effort when the database itself failed */
+    }
     try {
       const { endWebhookTiming } = require('./conversation/v3/runtime/runtimeSafety');
       endWebhookTiming(webhookStart);

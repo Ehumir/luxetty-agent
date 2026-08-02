@@ -189,19 +189,31 @@ function detectIntent(message, prevState = null) {
   let leadType = null;
   let operationType = null;
 
-  if (wantsOfferRent) {
-    leadType = 'offer';
-    operationType = 'rent';
-  } else if (wantsSell) {
-    leadType = 'offer';
-    operationType = 'sale';
-  } else if (wantsRent) {
-    leadType = 'demand';
-    operationType = 'rent';
-  } else if (wantsBuy) {
+  const shortOperation = text.replace(/[.!?]+$/g, '').trim();
+  if (shortOperation === 'compra' || shortOperation === 'comprar') {
     leadType = 'demand';
     operationType = 'sale';
-  } else if (wantsSellerGeneric) {
+  } else if (shortOperation === 'renta' || shortOperation === 'rentar') {
+    leadType = prev.lead_flow === 'offer' ? 'offer' : 'demand';
+    operationType = 'rent';
+  } else if (shortOperation === 'venta' || shortOperation === 'vender') {
+    leadType = 'offer';
+    operationType = 'sale';
+  }
+
+  if (!leadType && wantsOfferRent) {
+    leadType = 'offer';
+    operationType = 'rent';
+  } else if (!leadType && wantsSell) {
+    leadType = 'offer';
+    operationType = 'sale';
+  } else if (!leadType && wantsRent) {
+    leadType = 'demand';
+    operationType = 'rent';
+  } else if (!leadType && wantsBuy) {
+    leadType = 'demand';
+    operationType = 'sale';
+  } else if (!leadType && wantsSellerGeneric) {
     leadType = 'offer';
     operationType = 'sale';
   }

@@ -360,7 +360,10 @@ function buildResetAiStateAfterLeadCreated(aiState = {}, lead, assignment = {}) 
 function resolveOperation(aiState = {}, property = null) {
   const propertyOperation = property?.operation_type || null;
   const stateOperation = aiState.operation_type || aiState.interested_in_operation || null;
-  const operation = propertyOperation || stateOperation;
+  // P0: la propiedad/campaña nunca puede reescribir una operación ya expresada
+  // por el cliente. "purchase" es el alias conversacional de sale en CRM.
+  const normalizedStateOperation = stateOperation === 'purchase' ? 'sale' : stateOperation;
+  const operation = normalizedStateOperation || propertyOperation;
 
   if (operation === 'sale' || operation === 'rent') return operation;
   return null;

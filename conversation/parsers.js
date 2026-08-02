@@ -169,6 +169,12 @@ function extractMaxPrice(message) {
     if (Number.isFinite(value)) return Math.round(value * 1000000);
   }
 
+  const thousandsMatch = text.match(/\b(\d+(?:[\.,]\d+)?)\s*mil\b/i);
+  if (thousandsMatch?.[1]) {
+    const value = Number(thousandsMatch[1].replace(',', '.'));
+    if (Number.isFinite(value) && value > 0) return Math.round(value * 1000);
+  }
+
   const shorthand = [
     ['20 millones', 20000000],
     ['15 millones', 15000000],

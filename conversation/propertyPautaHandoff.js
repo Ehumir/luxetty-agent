@@ -38,10 +38,16 @@ function buildPropertyPautaReply({ parsed = {}, property = null, text = '' } = {
   const propertyName = snapshot.title ? ` “${snapshot.title}”` : '';
 
   if (asksVisit) {
+    if (!snapshot.title) {
+      return 'Gracias, ya recibí tu solicitud de visita. Primero validaremos el anuncio de origen para no asociarla con otra propiedad. Un asesor te contactará para continuar.';
+    }
     return `Gracias, ya recibí tus datos y tu solicitud para visitar${propertyName}. El asesor responsable confirmará contigo disponibilidad y horario.`;
   }
   if (asksAdvisor) {
-    return `Gracias, ya recibí tus datos y tu interés en${propertyName || ' la propiedad'}. El asesor responsable te contactará para continuar.`;
+    if (!snapshot.title) {
+      return 'Gracias, ya recibí tu solicitud para hablar con un asesor. Te contactará para continuar.';
+    }
+    return `Gracias, ya recibí tus datos y tu interés en${propertyName}. El asesor responsable te contactará para continuar.`;
   }
   if (!snapshot.title) {
     return 'Gracias, ya recibí tus datos y tu solicitud de información. Primero validaremos el anuncio de origen para no darte datos de otra propiedad; un asesor te contactará para continuar.';
