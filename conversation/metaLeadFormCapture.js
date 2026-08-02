@@ -26,6 +26,10 @@ const META_FORM_COMPLETION_PHRASES = [
   'filled out the form',
   'completed the form',
   'completed your form',
+  'preenchi seu formulario',
+  'preenchi seu formulário',
+  'preenchi o formulario',
+  'preenchi o formulário',
 ];
 
 function normalizeLabelKey(label) {
