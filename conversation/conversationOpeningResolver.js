@@ -21,7 +21,9 @@ function countInbound(recentMessages = []) {
 function isColdThread(aiState = {}, recentMessages = []) {
   const st = aiState && typeof aiState === 'object' ? aiState : {};
   if (st.lead_flow || st.handoff_sent || st.property_code || st.direct_property_code) return false;
-  return countInbound(recentMessages) <= 2;
+  // El segundo mensaje ya es continuidad, aunque el primero sólo haya
+  // producido el saludo. Tratarlo como apertura fría reinicia la intención.
+  return countInbound(recentMessages) <= 1;
 }
 
 function buildGreetingReply() {
