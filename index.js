@@ -677,18 +677,25 @@ function buildPropertyContextSnapshot(row) {
 async function saveOutboundMessages({ conversationId, messages, rawPayload = {} }) {
   const outbound = normalizeOutboundMessages(messages);
   const rows = [];
-  for (const messageText of outbound) {
+  const automationMessageId = rawPayload?.perseo_automation?.message_id || null;
+  for (let index = 0; index < outbound.length; index += 1) {
+    const messageText = outbound[index];
     const row = await saveConversationMessage(supabase, {
       conversationId,
       direction: 'outbound',
       senderType: 'ai_agent',
       messageType: 'text',
       messageText,
+      metaMessageId: automationMessageId ? `perseo:${automationMessageId}:${index}` : null,
       rawPayload,
     });
     if (row?.id) rows.push(row);
   }
-  return { outbound, rows };
+  return {
+    outbound,
+    rows,
+    duplicate: rows.length > 0 && rows.every((row) => row?._deduplicated === true),
+  };
 }
 
 /**
@@ -975,7 +982,16 @@ app.post('/webhook', async (req, res) => {
       inbound_message_id: inboundRow?.id || null,
     });
 
-    const policy = await resolveAutomatedReplyPolicy({ supabase, conversationRow, from });
+    const policy = await resolveAutomatedReplyPolicy({
+      supabase,
+      conversationRow,
+      conversationId,
+      messageId: metaMessageId,
+      from,
+      channel: 'ia',
+      route: 'deterministic',
+      requestKind: 'direct',
+    });
     if (policy.policyResolution === 'error') {
       logEvent('perseo_policy_fail_closed', {
         conversation_id: conversationId,
@@ -1036,8 +1052,13 @@ app.post('/webhook', async (req, res) => {
         to: from,
         messages: reply,
         conversationId,
+        messageId: metaMessageId,
+        conversationRow,
+        route: 'qa',
+        requestKind: 'direct',
+        qaSession: { isQa: true, authorized: true },
+        supabase,
         rawPayload: { perseo_metadata: { response_source: 'qa_sprint1', qa_command: cmd } },
-        policy,
         saveOutboundMessages,
         saveConversationEvent,
         logEvent,
@@ -1962,6 +1983,7 @@ app.post('/webhook', async (req, res) => {
         nextAiState = v2.nextAiState || nextAiState;
         Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(parsedSignals, previousAiState, nextAiState, text));
         responseSource = v2.responseSource || 'engine_v2';
+        selectedPipeline = 'v2';
         logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: true });
       }
 
@@ -2271,6 +2293,11 @@ app.post('/webhook', async (req, res) => {
         to: from,
         messages: reply,
         conversationId,
+        messageId: metaMessageId,
+        conversationRow,
+        route: selectedPipeline,
+        requestKind: 'direct',
+        supabase,
         rawPayload: {
           perseo_metadata: {
             response_source: responseSource,
@@ -2283,7 +2310,6 @@ app.post('/webhook', async (req, res) => {
             handoff_reason: nextAiState.handoff_reason || null,
           },
         },
-        policy,
         saveOutboundMessages,
         saveConversationEvent,
         logEvent,

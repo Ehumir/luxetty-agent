@@ -7,7 +7,11 @@ Esta rama contiene exclusivamente #122, #123, #124 limitado a normalización, #1
 ## Flags y kill switch
 
 - `PERSEO_P0_CRM_RECOVERY_ENABLED=false` por defecto.
-- `PERSEO_AUTOMATED_RESPONSES_ENABLED=false` es el kill switch global del despliegue.
+- `PERSEO_AUTOMATION_MODE=GLOBAL_PAUSED` y `PERSEO_KILL_SWITCH=true` son el arranque seguro.
+- `PERSEO_AUTOMATED_RESPONSES_ENABLED=false`, `PERSEO_CANARY_ENABLED=false`,
+  `PERSEO_CANARY_CONVERSATION_IDS=` y `PERSEO_FOLLOWUPS_ENABLED=false` bloquean toda salida real.
+- `CANARY_ALLOWLIST` sólo admite UUID de `conversation_id`; no admite teléfonos ni identidades indirectas.
+- Configuración ausente/corrupta, telemetría fallida o pausa global inactiva bloquean el envío.
 - Las 20 conversaciones auditadas permanecen con `ai_paused=true` y nunca participan en el canary.
 - El código se despliega primero con ambos flags apagados. No se modifica `main` sin autorización.
 

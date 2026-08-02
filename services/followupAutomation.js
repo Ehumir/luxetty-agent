@@ -249,7 +249,18 @@ async function sendFollowup({ supabase, sendWhatsAppText, conversation, action, 
     return { sent: false, reason: 'missing_phone' };
   }
 
-  const sendResult = await sendWhatsAppText(phone, step.message, conversation);
+  const sendResult = await sendWhatsAppText(phone, step.message, conversation, action);
+  if (sendResult?.sent === false) {
+    await saveConversationEvent(supabase, conversation.id, `${step.eventType}_skipped`, {
+      reason: sendResult.reason_code || sendResult.reason || 'automation_policy_blocked',
+      step: step.key,
+      source: 'inactivity_followup_job',
+    });
+    return {
+      sent: false,
+      reason: sendResult.reason_code || sendResult.reason || 'automation_policy_blocked',
+    };
+  }
   if (!sendResult?.persistedOutbound) {
     await saveOutboundFollowupMessage(supabase, conversation.id, step.message, step.key);
   }
@@ -315,6 +326,7 @@ async function closeConversation({ supabase, sendWhatsAppText, conversation, act
 async function runInactivityFollowups({
   supabase,
   sendWhatsAppText,
+  authorizeAutomation = null,
   now = new Date(),
   limit = 50,
   logger = console,
@@ -365,6 +377,28 @@ async function runInactivityFollowups({
         continue;
       }
 
+      if (typeof authorizeAutomation !== 'function') {
+        summary.skipped += 1;
+        logger.info?.('FOLLOWUP_AUTOMATION_SKIPPED', {
+          conversation_id: conversation.id,
+          reason: 'automation_policy_missing',
+        });
+        continue;
+      }
+
+      const policy = await authorizeAutomation({ conversation, action });
+      if (!policy?.allowAutomatedReply) {
+        summary.skipped += 1;
+        logger.info?.('FOLLOWUP_AUTOMATION_SKIPPED', {
+          conversation_id: conversation.id,
+          reason: policy?.reason_code || 'automation_policy_blocked',
+        });
+        continue;
+      }
+
+      // Conservar el contexto previo: algunos adaptadores de prueba mutan la fila al cerrar.
+      const aiStateBeforeAction = normalizeAiState(conversation.ai_state);
+
       const result =
         action.kind === 'close'
           ? await closeConversation({ supabase, sendWhatsAppText, conversation, action, eventState })
@@ -373,7 +407,7 @@ async function runInactivityFollowups({
       if (result.closed) {
         summary.closed += 1;
 
-        const aiState = normalizeAiState(conversation.ai_state);
+        const aiState = aiStateBeforeAction;
         const pautaProperty =
           isPautaConversation(aiState) || resolvePautaPropertyCrmContext(aiState).bypassEligible;
 
