@@ -149,6 +149,28 @@ describe('property pauta handoff', () => {
     );
   });
 
+  it('regresión real anonimizada: reconoce formulario completado en portugués', () => {
+    const portugueseForm = `Olá! Preenchi seu formulário e gostaria de saber mais sobre sua empresa.
+¿Cómo llevaría a cabo la operación?: Con crédito
+¿Qué deseas hacer?: 📋 Recibir más información
+Phone number: +520000000000
+Si decide llevar a cabo una operación, ¿en cuánto la realizaría?: 6-9 meses
+Full name: Cliente Anonimizado
+Email: cliente@example.com`;
+
+    const turn = tryPropertyPautaHandoffTurn({
+      text: portugueseForm,
+      message: { type: 'text' },
+      campaignContext: { campaign_type: 'property_listing', property_code: 'LUX-TEST' },
+      previousAiState: {},
+      parsedSignals: {},
+    });
+
+    assert.equal(turn.handled, true);
+    assert.equal(turn.responseSource, 'property_pauta_meta_lead_form');
+    assert.doesNotMatch(String(turn.reply), /compra, venta o renta/i);
+  });
+
   it('no intercepta Meta Lead Form de captación propietarios (C1)', () => {
     const sellerForm = `¡Hola! Completé el formulario y me gustaría obtener más información sobre tu negocio.
 • nombre_completo: Javier Velázquez
