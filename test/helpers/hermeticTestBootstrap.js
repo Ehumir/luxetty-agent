@@ -4,6 +4,12 @@
 process.env.NODE_ENV = 'test';
 process.env.PERSEO_TEST_HERMETIC = 'true';
 
+// Child Node processes spawned by suite runners inherit the same isolation.
+const preloadOption = `--require=${__filename}`;
+if (!String(process.env.NODE_OPTIONS || '').includes(preloadOption)) {
+  process.env.NODE_OPTIONS = [process.env.NODE_OPTIONS, preloadOption].filter(Boolean).join(' ');
+}
+
 for (const name of [
   'OPENAI_API_KEY',
   'SUPABASE_URL',
@@ -27,7 +33,7 @@ function blocked(protocol) {
   };
 }
 
-global.fetch = blocked('fetch');
+const originalFetch = global.fetch;
 
 const http = require('node:http');
 const https = require('node:https');
@@ -40,6 +46,11 @@ function loopback(options) {
     : String(options?.hostname || options?.host || '');
   return host === '127.0.0.1' || host === 'localhost' || host === '::1';
 }
+
+global.fetch = function hermeticFetch(input, ...args) {
+  if (!loopback(input)) throw new Error('hermetic_test_blocked_network:fetch');
+  return originalFetch.call(global, input, ...args);
+};
 
 http.request = function hermeticHttpRequest(options, ...args) {
   if (!loopback(options)) throw new Error('hermetic_test_blocked_network:http.request');
