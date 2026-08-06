@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const {
   PROPERTY_PAUTA_HANDOFF_REPLY,
+  buildPropertyPautaReply,
   isPropertyDemandMetaLeadForm,
   isPropertyPautaHandoffThread,
   tryPropertyPautaHandoffTurn,
@@ -30,28 +31,37 @@ describe('property pauta handoff', () => {
     );
   });
 
-  it('responde mensaje único de handoff al asesor de la propiedad', () => {
+  it('responde con contexto verificable de la propiedad y deja el hilo esperando al humano', () => {
     const turn = tryPropertyPautaHandoffTurn({
       text: LAURO_FORM,
       message: { type: 'text' },
       campaignContext: { campaign_type: 'property_listing', property_code: 'LUX-A0461' },
+      property: {
+        title: 'Casa en Cumbres',
+        operation_type: 'sale',
+        neighborhood: 'Cumbres 5o Sector',
+        price: 8500000,
+        currency_code: 'MXN',
+      },
       previousAiState: {},
       parsedSignals: {},
     });
 
     assert.equal(turn.handled, true);
-    assert.equal(turn.reply, PROPERTY_PAUTA_HANDOFF_REPLY);
-    assert.match(String(turn.reply), /asesor que tiene esta propiedad asignada/i);
+    assert.match(String(turn.reply), /Casa en Cumbres/);
+    assert.match(String(turn.reply), /Cumbres 5o Sector/);
+    assert.match(String(turn.reply), /\$8,500,000/);
     assert.doesNotMatch(String(turn.reply), /Claro, te ayudo/i);
     assert.doesNotMatch(String(turn.reply), /comprar o rentar/i);
     assert.equal(turn.statePatch.lead_flow, 'demand');
     assert.equal(turn.statePatch.property_pauta_handoff_sent, true);
     assert.equal(turn.statePatch.handoff_sent, true);
+    assert.equal(turn.statePatch.conversation_mode, 'HUMAN_WAITING');
     assert.equal(turn.statePatch.full_name, 'Lauro De Paula');
     assert.equal(turn.responseSource, 'property_pauta_meta_lead_form');
   });
 
-  it('follow-up en hilo pauta repite handoff sin calificar', () => {
+  it('follow-up en hilo pauta no repite handoff y queda para el gate HUMAN_WAITING', () => {
     const first = tryPropertyPautaHandoffTurn({
       text: LAURO_FORM,
       message: { type: 'text' },
@@ -68,9 +78,17 @@ describe('property pauta handoff', () => {
       parsedSignals: {},
     });
 
-    assert.equal(followUp.handled, true);
-    assert.equal(followUp.reply, PROPERTY_PAUTA_HANDOFF_REPLY);
-    assert.equal(followUp.responseSource, 'property_pauta_handoff');
+    assert.equal(followUp.handled, false);
+    assert.equal(followUp.reason, 'post_handoff_mode_gate');
+  });
+
+  it('si no hay propiedad verificable no afirma que exista una asignada', () => {
+    const reply = buildPropertyPautaReply({
+      parsed: { labeled: { operation_raw: 'Recibir más información' } },
+      property: null,
+    });
+    assert.match(reply, /validaremos el anuncio de origen/i);
+    assert.doesNotMatch(reply, /asesor que tiene esta propiedad asignada/i);
   });
 
   it('hilo pauta con referral + property_code activa handoff', () => {
@@ -111,7 +129,8 @@ describe('property pauta handoff', () => {
       parsedSignals: {},
     });
     assert.equal(turn.handled, true);
-    assert.equal(turn.reply, PROPERTY_PAUTA_HANDOFF_REPLY);
+    assert.match(turn.reply, /validaremos el anuncio de origen/i);
+    assert.doesNotMatch(turn.reply, /propiedad asignada/i);
   });
 
   it('detecta Meta Lead Form en inglés (pauta demanda)', () => {
@@ -128,6 +147,28 @@ describe('property pauta handoff', () => {
       }),
       true,
     );
+  });
+
+  it('regresión real anonimizada: reconoce formulario completado en portugués', () => {
+    const portugueseForm = `Olá! Preenchi seu formulário e gostaria de saber mais sobre sua empresa.
+¿Cómo llevaría a cabo la operación?: Con crédito
+¿Qué deseas hacer?: 📋 Recibir más información
+Phone number: +520000000000
+Si decide llevar a cabo una operación, ¿en cuánto la realizaría?: 6-9 meses
+Full name: Cliente Anonimizado
+Email: cliente@example.com`;
+
+    const turn = tryPropertyPautaHandoffTurn({
+      text: portugueseForm,
+      message: { type: 'text' },
+      campaignContext: { campaign_type: 'property_listing', property_code: 'LUX-TEST' },
+      previousAiState: {},
+      parsedSignals: {},
+    });
+
+    assert.equal(turn.handled, true);
+    assert.equal(turn.responseSource, 'property_pauta_meta_lead_form');
+    assert.doesNotMatch(String(turn.reply), /compra, venta o renta/i);
   });
 
   it('no intercepta Meta Lead Form de captación propietarios (C1)', () => {

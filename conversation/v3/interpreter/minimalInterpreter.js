@@ -167,6 +167,7 @@ function isExplicitFlowSwitchToSell(text) {
   if (/\bno\s+quiero\s+vender\b/.test(t) && /\b(?:comprar|busco)\b/.test(t)) return false;
   return (
     (/\bquiero\s+vender\b/.test(t) && !/\bno\s+quiero\s+vender\b/.test(t)) ||
+    /\bvendo\s+mi\b/.test(t) ||
     t.includes('vender mi') ||
     t.includes('poner en venta') ||
     t.includes('mejor quiero vender') ||
@@ -409,6 +410,11 @@ function interpretUserMessage(state, text, options = {}) {
     patch.leadFlow = 'offer';
     patch.operationType = 'rent';
     applyPropertyTypePatch(patch, parsePropertyType(text) || 'house');
+    const sellerAmount = parseMoneyAmount(raw);
+    if (sellerAmount != null && sellerAmount > 0) {
+      patch.expectedPrice = sellerAmount;
+      decision.extractedEntities.expectedPrice = sellerAmount;
+    }
     const zoneRentOut = extractLooseLocationPhrase(raw);
     if (zoneRentOut) {
       patch.locationText = zoneRentOut;
@@ -455,6 +461,11 @@ function interpretUserMessage(state, text, options = {}) {
     patch.leadFlow = 'offer';
     patch.operationType = ownerOpEarly === 'mixed' ? 'sale' : ownerOpEarly === 'rent' ? 'rent' : 'sale';
     applyPropertyTypePatch(patch, parsePropertyType(text) || 'house');
+    const sellerAmount = parseMoneyAmount(raw);
+    if (sellerAmount != null && sellerAmount > 0) {
+      patch.expectedPrice = sellerAmount;
+      decision.extractedEntities.expectedPrice = sellerAmount;
+    }
     const zoneSellEarly = extractLooseLocationPhrase(raw);
     if (zoneSellEarly) {
       patch.locationText = zoneSellEarly;
@@ -538,9 +549,8 @@ function interpretUserMessage(state, text, options = {}) {
     // SoT facts first — no name gate for precio/zona publicables.
     const famOnIntake = classifyFactFamily(t);
     const infoish =
-      famOnIntake ||
-      (/\b(?:h[aá]blame|cu[eé]ntame|dime|info|informaci[oó]n)\b/.test(t) ? 'info' : null) ||
-      (codeHit ? 'info' : null);
+      (famOnIntake === 'interest' ? null : famOnIntake) ||
+      (/\b(?:h[aá]blame|cu[eé]ntame|dime|info|informaci[oó]n)\b/.test(t) ? 'info' : null);
     if (infoish) {
       decision.detectedIntent = V3_INTENT.PROPERTY_FACT_QUESTION;
       decision.propertyInquiryFamily = infoish;

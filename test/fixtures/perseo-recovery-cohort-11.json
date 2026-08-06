@@ -1,0 +1,131 @@
+[
+  {
+    "id": "NEW_001",
+    "source": "production_real",
+    "route": "property_linked",
+    "messages": ["Hola, me interesa la propiedad LUX-A0492 de Mitras Centro. ¿Me das más información?"],
+    "operation": "sale",
+    "zone": "Mitras Centro",
+    "property_type": "house",
+    "property_code": "LUX-A0492",
+    "expected": "AUTO PASS"
+  },
+  {
+    "id": "NEW_002",
+    "source": "production_real",
+    "route": "fallback",
+    "messages": [
+      "Hola solo quiero saber el valor aproximado de mi casa",
+      "166 m2 de construcción, 160 m2 de terreno, dos plantas, tres recámaras y dos baños y medio",
+      "Dos árboles al frente y uno en el patio trasero",
+      "<NOMBRE>"
+    ],
+    "operation": "sale",
+    "zone": null,
+    "property_type": "house",
+    "expected": "FALLBACK PASS",
+    "fallback_reason": "valuation_location_missing"
+  },
+  {
+    "id": "NEW_003",
+    "source": "production_real",
+    "route": "seller_form",
+    "messages": [
+      "Completé el formulario.\nNombre completo: <NOMBRE>\nTipo de propiedad: Casa\nColonia: Cumbres San Agustín\nOperación: Venta\nPlazo: 0-3 meses.",
+      "Sí está en Cumbres Zona Poniente"
+    ],
+    "operation": "sale",
+    "zone": "Cumbres San Agustín",
+    "property_type": "house",
+    "expected": "AUTO PASS"
+  },
+  {
+    "id": "NEW_004",
+    "source": "production_real",
+    "route": "hospital",
+    "messages": ["Buen día, busco renta de departamento por el área del hospital materno infantil"],
+    "operation": "rent",
+    "zone": "Hospital Materno Infantil",
+    "property_type": "apartment",
+    "expected": "AUTO PASS"
+  },
+  {
+    "id": "NEW_005",
+    "source": "production_real",
+    "route": "fallback",
+    "messages": [
+      "Soy dueño de una inmobiliaria y me interesa hacer sinergia, compartirles una propiedad en Cumbres 8vo sector.",
+      "¿Con quién lo puedo ver?",
+      "Venta"
+    ],
+    "operation": "sale",
+    "zone": "Cumbres 8vo sector",
+    "property_type": "house",
+    "expected": "FALLBACK PASS",
+    "fallback_reason": "broker_collaboration_human_review"
+  },
+  {
+    "id": "NEW_006",
+    "source": "production_internal_observed",
+    "route": "seller_form",
+    "messages": ["Completé el formulario.\nNombre completo: Cliente Canary Interno\nTipo de propiedad: Casa\nColonia: Cumbres\nOperación: Venta\nPlazo: próximos 3 meses."],
+    "operation": "sale",
+    "zone": "Cumbres",
+    "property_type": "house",
+    "expected": "AUTO PASS"
+  },
+  {
+    "id": "NEW_007",
+    "source": "production_internal_observed",
+    "route": "fallback",
+    "messages": ["Prueba de kill switch sin respuesta"],
+    "operation": null,
+    "zone": null,
+    "property_type": null,
+    "expected": "FALLBACK PASS",
+    "fallback_reason": "intent_insufficient"
+  },
+  {
+    "id": "NEW_008",
+    "source": "production_internal_observed",
+    "route": "fallback",
+    "messages": ["Preflight de aislamiento sin respuesta"],
+    "operation": null,
+    "zone": null,
+    "property_type": null,
+    "expected": "FALLBACK PASS",
+    "fallback_reason": "intent_insufficient"
+  },
+  {
+    "id": "NEW_009",
+    "source": "production_real",
+    "route": "fallback",
+    "messages": ["Z", "8.(Nuc ok 8?/", "88"],
+    "operation": null,
+    "zone": null,
+    "property_type": null,
+    "expected": "FALLBACK PASS",
+    "fallback_reason": "low_confidence_unintelligible"
+  },
+  {
+    "id": "HOSPITAL_CONTROLLED",
+    "source": "controlled_replay",
+    "route": "hospital",
+    "messages": ["Buen día, busco renta de departamento por el área del hospital materno infantil"],
+    "operation": "rent",
+    "zone": "Hospital Materno Infantil",
+    "property_type": "apartment",
+    "expected": "AUTO PASS"
+  },
+  {
+    "id": "CONTROLLED_CASE_10",
+    "source": "controlled_replay",
+    "route": "fallback",
+    "messages": ["Busco un departamento en renta en Zona Valle"],
+    "operation": "rent",
+    "zone": "Zona Valle",
+    "property_type": "apartment",
+    "expected": "FALLBACK PASS",
+    "fallback_reason": "inventory_dependency_low_confidence"
+  }
+]

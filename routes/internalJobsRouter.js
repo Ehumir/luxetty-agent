@@ -5,10 +5,11 @@ const { supabase } = require('../services/supabaseService');
 const { sendPerseoAutomatedWhatsApp } = require('../services/perseoAutomatedWhatsApp');
 const { saveOutboundMessages } = require('../services/saveOutboundMessages');
 const { runInactivityFollowups } = require('../services/followupAutomation');
+const { resolveAutomationPolicy } = require('../conversation/perseoGatekeeper');
 const router = express.Router();
 
 function isFollowupsJobEnabled() {
-  return process.env.PERSEO_INACTIVITY_FOLLOWUPS_ENABLED !== 'false';
+  return process.env.PERSEO_FOLLOWUPS_ENABLED === 'true';
 }
 
 async function saveConversationEventForJob(conversationId, type, payload = {}) {
@@ -27,20 +28,25 @@ async function saveConversationEventForJob(conversationId, type, payload = {}) {
   }
 }
 
-async function sendWhatsAppTextForFollowup(phone, messageText, conversation = null) {
+async function sendWhatsAppTextForFollowup(phone, messageText, conversation = null, action = null) {
   const conversationId = conversation?.id || null;
+  const stepKey = action?.step?.eventType || action?.step?.key || 'unknown';
   const rawPayload = {
     perseo_metadata: { response_source: 'inactivity_followup_job' },
     automation: 'inactivity_followup',
   };
 
-  await sendPerseoAutomatedWhatsApp({
+  const result = await sendPerseoAutomatedWhatsApp({
     channel: 'ia',
     to: phone,
     messages: [messageText],
     conversationId,
+    messageId: `followup:${conversationId}:${stepKey}`,
+    conversationRow: conversation,
+    route: 'followup',
+    requestKind: 'followup',
+    supabase,
     rawPayload,
-    policy: { allowAutomatedReply: true, reason_code: 'cron_followup', policyResolution: 'ok' },
     saveOutboundMessages: (args) => saveOutboundMessages(supabase, args),
     saveConversationEvent: saveConversationEventForJob,
     logEvent: (event, payload) => {
@@ -48,7 +54,7 @@ async function sendWhatsAppTextForFollowup(phone, messageText, conversation = nu
     },
   });
 
-  return { persistedOutbound: true };
+  return { ...result, persistedOutbound: result.sent === true };
 }
 
 router.post('/inactivity-followups', async (req, res) => {
@@ -58,7 +64,7 @@ router.post('/inactivity-followups', async (req, res) => {
     return res.json({
       ok: true,
       skipped: true,
-      reason: 'PERSEO_INACTIVITY_FOLLOWUPS_ENABLED=false',
+      reason: 'PERSEO_FOLLOWUPS_ENABLED!=true',
     });
   }
 
@@ -67,6 +73,16 @@ router.post('/inactivity-followups', async (req, res) => {
     const summary = await runInactivityFollowups({
       supabase,
       sendWhatsAppText: sendWhatsAppTextForFollowup,
+      authorizeAutomation: ({ conversation, action }) =>
+        resolveAutomationPolicy({
+          supabase,
+          conversationRow: conversation,
+          conversationId: conversation.id,
+          messageId: `followup:${conversation.id}:${action?.step?.eventType || action?.step?.key || 'unknown'}`,
+          channel: 'ia',
+          route: 'followup',
+          requestKind: 'followup',
+        }),
       limit: Number.isFinite(limit) ? limit : 100,
       logger: console,
     });

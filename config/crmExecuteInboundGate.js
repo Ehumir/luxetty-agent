@@ -51,6 +51,18 @@ function shouldAllowCrmExecuteForInbound(input) {
     isOrganicOfferBypassEnabled() &&
     organicCtx.bypassEligible &&
     !(input?.argosMode === true && process.env.PERSEO_ARGOS_ENABLED === 'true');
+  const p0Operation = String(input?.aiState?.operation_type || '').toLowerCase();
+  const p0CommercialFlow =
+    input?.aiState?.meta_lead_form_flow === true ||
+    input?.aiState?.lead_flow === 'demand' ||
+    input?.aiState?.lead_flow === 'offer' ||
+    input?.aiState?.lead_type === 'supply' ||
+    input?.aiState?.property_specific_intent === true;
+  const p0RecoveryBypass =
+    process.env.PERSEO_P0_CRM_RECOVERY_ENABLED === 'true' &&
+    ['sale', 'rent'].includes(p0Operation) &&
+    p0CommercialFlow &&
+    !(input?.argosMode === true && process.env.PERSEO_ARGOS_ENABLED === 'true');
 
   const base = {
     phone: input?.phone || null,
@@ -67,6 +79,7 @@ function shouldAllowCrmExecuteForInbound(input) {
     pauta_bypass_reason: pautaBypass ? 'pauta_property' : pautaCtx.reason,
     organic_offer_bypass: organicBypass,
     organic_offer_bypass_reason: organicBypass ? 'organic_offer' : organicCtx.reason,
+    p0_recovery_bypass: p0RecoveryBypass,
   };
 
   if (!cfg.crmExecute) {
@@ -84,6 +97,15 @@ function shouldAllowCrmExecuteForInbound(input) {
       crm_execute_allowed: false,
       block_reason: 'v3_disabled',
       crm_execute_bypass_reason: null,
+    };
+  }
+
+  if (p0RecoveryBypass) {
+    return {
+      ...base,
+      crm_execute_allowed: true,
+      block_reason: null,
+      crm_execute_bypass_reason: 'p0_commercial_intent',
     };
   }
 
@@ -164,6 +186,7 @@ function buildCrmExecuteGatePayload(gateResult) {
     pauta_bypass_reason: gateResult.pauta_bypass_reason ?? null,
     organic_offer_bypass: gateResult.organic_offer_bypass === true,
     organic_offer_bypass_reason: gateResult.organic_offer_bypass_reason ?? null,
+    p0_recovery_bypass: gateResult.p0_recovery_bypass === true,
   };
 }
 

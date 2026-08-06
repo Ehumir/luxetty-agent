@@ -9,18 +9,25 @@ const { saveConversationMessage } = require('./saveConversationMessage');
 async function saveOutboundMessages(supabase, { conversationId, messages, rawPayload = {} }) {
   const outbound = normalizeOutboundMessages(messages);
   const rows = [];
-  for (const messageText of outbound) {
+  const automationMessageId = rawPayload?.perseo_automation?.message_id || null;
+  for (let index = 0; index < outbound.length; index += 1) {
+    const messageText = outbound[index];
     const row = await saveConversationMessage(supabase, {
       conversationId,
       direction: 'outbound',
       senderType: 'ai_agent',
       messageType: 'text',
       messageText,
+      metaMessageId: automationMessageId ? `perseo:${automationMessageId}:${index}` : null,
       rawPayload,
     });
     if (row?.id) rows.push(row);
   }
-  return { outbound, rows };
+  return {
+    outbound,
+    rows,
+    duplicate: rows.length > 0 && rows.every((row) => row?._deduplicated === true),
+  };
 }
 
 module.exports = {

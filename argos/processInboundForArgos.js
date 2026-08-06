@@ -411,8 +411,12 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
     crm_skip_reason: crmGate.eligible ? null : crmGate.reason,
   };
 
-  // Deterministic ARGOS: skip async runtime writes, but keep CRM dry-run preview for gate tests.
-  const skipCrmRuntimeSideEffects = isDeterministicMode(flags);
+  // El runtime persistente en ARGOS usa exclusivamente `memory_argos`; es parte
+  // del contrato determinista y no escribe CRM/Supabase. Sólo se omite cuando
+  // el escenario no lo solicitó explícitamente.
+  const skipCrmRuntimeSideEffects =
+    isDeterministicMode(flags) &&
+    (flags.crm_runtime_persistent !== true || !input.supabaseRaw);
 
   let crm_runtime_out = null;
   if (!skipCrmRuntimeSideEffects && isCrmRuntimePersistentEnabled() && v3State) {

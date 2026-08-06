@@ -46,7 +46,7 @@ function composeHandoffPendingContinuity(state) {
   const nm = firstName(state);
   const head = nm ? `Lamento la confusión, ${nm}.` : 'Lamento la confusión.';
   return {
-    responseText: `${head} Un asesor de Luxetty continuará contigo por este medio. Si te parece bien el contacto, un “sí” me ayuda a confirmarlo.`,
+    responseText: `${head} Ya tengo anotada tu solicitud y quedó canalizada. Un asesor de Luxetty continuará contigo por este medio. Si te parece bien el contacto, un “sí” me ayuda a confirmarlo.`,
     followUpQuestion: null,
     awaitingField: state.awaitingField === 'advisor_contact_consent' ? 'advisor_contact_consent' : null,
     toneFlags: { consultive: true, handoffContinuity: true },

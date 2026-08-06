@@ -31,6 +31,16 @@ function hasMetaMessageId(metaMessageId) {
   return metaMessageId != null && String(metaMessageId).trim() !== '';
 }
 
+function markDeduplicated(row) {
+  if (!row || typeof row !== 'object') return row;
+  try {
+    Object.defineProperty(row, '_deduplicated', { value: true, enumerable: false });
+  } catch (_error) {
+    // Sólo metadato de proceso; la fila sigue siendo segura aunque no sea extensible.
+  }
+  return row;
+}
+
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {object} params
@@ -61,7 +71,7 @@ async function saveConversationMessage(supabase, {
           .limit(1)
           .maybeSingle();
 
-        return existing || null;
+        return markDeduplicated(existing || null);
       }
     }
 
@@ -97,7 +107,7 @@ async function saveConversationMessage(supabase, {
             existing_message_id: existingRow.id,
             existing_conversation_id: existingRow.conversation_id,
           });
-          return existingRow;
+          return markDeduplicated(existingRow);
         }
 
         console.warn('inbound_duplicate_insert_conflict_missing_row', {

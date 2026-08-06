@@ -83,7 +83,7 @@ function composeSellQualificationComplete(state) {
   const zone = state.locationText || 'esa zona';
   const occ = occupancyStatusLabel(getOccupancyStatus(state));
   return {
-    responseText: `Perfecto, ${nm}. La propiedad está ${occ}. Con lo que tengo de tu venta en ${zone}, un asesor puede continuar contigo.`,
+    responseText: `Perfecto, ${nm}. Tomé que la propiedad está ${occ}. Con lo que tengo de tu venta en ${zone}, un asesor puede continuar contigo.`,
     followUpQuestion: null,
     awaitingField: null,
     toneFlags: { consultive: true },

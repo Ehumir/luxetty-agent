@@ -15,6 +15,20 @@ function appendPropertyHistory(history, code) {
   return [entry, ...prev].slice(0, 5);
 }
 
+function codeFromOption(option) {
+  if (typeof option === 'string') return cleanSpaces(option) || null;
+  return cleanSpaces(String(option?.code || option?.property_code || option?.listing_code || '')) || null;
+}
+
+function authorizedBatchCodes(state) {
+  const source = Array.isArray(state.showBatch) && state.showBatch.length
+    ? state.showBatch
+    : Array.isArray(state.matchedOptions)
+      ? state.matchedOptions
+      : [];
+  return [...new Set(source.map(codeFromOption).filter(Boolean))];
+}
+
 /**
  * Resuelve referencias ordinales a código de inventario.
  * @param {import('../types/conversationState').ConversationState} state
@@ -24,9 +38,21 @@ function appendPropertyHistory(history, code) {
 function resolvePropertyReferenceCode(state, text) {
   const t = normalizeText(text);
   const hist = Array.isArray(state.propertyHistory) ? state.propertyHistory : [];
-  if (!hist.length) return null;
+  const batch = authorizedBatchCodes(state);
+
+  if (/\b(la\s+)?segunda\b|\bsegunda\s+propiedad\b|\bel\s+segundo\b/.test(t)) {
+    return batch.length >= 2 ? batch[1] : null;
+  }
+  if (/\b(esa|esta)\s+(casa|propiedad)\b/.test(t)) {
+    if (batch.length === 1) return batch[0];
+    if (batch.length > 1) return null;
+    const active = codeFromOption(state.activeProperty) || cleanSpaces(String(state.propertyListingCode || '')) || null;
+    return active;
+  }
+  if (!hist.length && !batch.length) return null;
 
   if (/\b(la\s+)?primera\b|\bprimera\s+propiedad\b|\bel\s+primero\b/.test(t)) {
+    if (batch.length) return batch[0];
     return cleanSpaces(String(hist[hist.length - 1]?.code || '')) || null;
   }
   if (/\b(la\s+)?ultima\b|\blo\s+ultimo\b|\bultima\s+propiedad\b/.test(t)) {
@@ -40,5 +66,6 @@ function resolvePropertyReferenceCode(state, text) {
 
 module.exports = {
   appendPropertyHistory,
+  authorizedBatchCodes,
   resolvePropertyReferenceCode,
 };

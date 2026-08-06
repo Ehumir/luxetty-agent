@@ -72,6 +72,43 @@ describe('conversationPriorityResolver', () => {
     assert.doesNotMatch(String(o.reply || ''), /compra, venta o renta/i);
   });
 
+  it('conserva el hilo cuando el cliente responde solamente Compra', () => {
+    const previous = getDefaultAiState();
+    const priority = resolvePriorityIntent('Compra', previous, {});
+    assert.equal(priority.key, 'buyer_search');
+    assert.equal(priority.lead_flow, 'demand');
+
+    const opening = require('../conversation/conversationOpeningResolver');
+    const turn = opening.resolveConversationOpening({
+      text: 'Compra',
+      previousAiState: previous,
+      nextAiState: {},
+      parsedSignals: {},
+      recentMessages: [
+        { direction: 'inbound', text: 'Hola. Opciones en Cumbres' },
+        { direction: 'outbound', text: '¿Compra, venta o renta?' },
+        { direction: 'inbound', text: 'Compra' },
+      ],
+    });
+
+    assert.equal(turn.handled, false);
+    assert.equal(turn.opening_type, 'buyer_search');
+    assert.equal(turn.statePatch.lead_flow, 'demand');
+    assert.doesNotMatch(String(turn.reply || ''), /compra, venta o renta/i);
+  });
+
+  it('el segundo inbound ya no se considera hilo frío', () => {
+    const { isColdThread } = require('../conversation/conversationOpeningResolver');
+    assert.equal(
+      isColdThread({}, [
+        { direction: 'inbound', text: 'Hola' },
+        { direction: 'outbound', text: '¿Cómo te apoyo?' },
+        { direction: 'inbound', text: 'Compra' },
+      ]),
+      false,
+    );
+  });
+
   it('meta_general antes que greeting genérico', () => {
     const p = resolvePriorityIntent(
       'Estoy navegando en facebook y Vi su página inmobiliaria',

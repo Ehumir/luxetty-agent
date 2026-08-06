@@ -14,10 +14,8 @@ function parseMoneyAmount(text) {
   if (isPhoneLikeText(text)) return null;
 
   const flex = parseFlexMoneyAmount(text);
-  if (flex?.amount != null) {
-    if (isConversationalFlexEnabled()) {
-      recordFlexApplied('money', { confidence: flex.confidence });
-    }
+  if (flex?.amount != null && isConversationalFlexEnabled()) {
+    recordFlexApplied('money', { confidence: flex.confidence });
     return flex.amount;
   }
 

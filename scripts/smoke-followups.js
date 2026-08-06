@@ -225,6 +225,7 @@ async function testRunTwiceNoDuplicates() {
   const firstRun = await runInactivityFollowups({
     supabase,
     sendWhatsAppText,
+    authorizeAutomation: async () => ({ allowAutomatedReply: true }),
     now,
     limit: 50,
     logger: console,
@@ -234,6 +235,7 @@ async function testRunTwiceNoDuplicates() {
   const secondRun = await runInactivityFollowups({
     supabase,
     sendWhatsAppText,
+    authorizeAutomation: async () => ({ allowAutomatedReply: true }),
     now,
     limit: 50,
     logger: console,
@@ -292,6 +294,7 @@ async function testOutside24hCloseWithoutFreeText() {
   const run = await runInactivityFollowups({
     supabase,
     sendWhatsAppText,
+    authorizeAutomation: async () => ({ allowAutomatedReply: true }),
     now,
     limit: 50,
     logger: console,
@@ -387,6 +390,7 @@ async function testPautaLeadCreatedOnClose() {
   const result = await runInactivityFollowups({
     supabase,
     sendWhatsAppText,
+    authorizeAutomation: async () => ({ allowAutomatedReply: true }),
     now: new Date(),
     limit: 50,
     logger: { info: () => {}, warn: () => {} },
@@ -454,6 +458,7 @@ async function testPautaLeadNotDuplicatedOnSecondRun() {
   await runInactivityFollowups({
     supabase,
     sendWhatsAppText,
+    authorizeAutomation: async () => ({ allowAutomatedReply: true }),
     now: new Date(),
     limit: 50,
     logger: { info: () => {}, warn: () => {} },
@@ -518,6 +523,7 @@ async function testNoPautaLeadWhenContactHasAgent() {
   await runInactivityFollowups({
     supabase,
     sendWhatsAppText,
+    authorizeAutomation: async () => ({ allowAutomatedReply: true }),
     now: new Date(),
     limit: 50,
     logger: { info: () => {}, warn: () => {} },

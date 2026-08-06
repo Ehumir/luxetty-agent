@@ -677,18 +677,25 @@ function buildPropertyContextSnapshot(row) {
 async function saveOutboundMessages({ conversationId, messages, rawPayload = {} }) {
   const outbound = normalizeOutboundMessages(messages);
   const rows = [];
-  for (const messageText of outbound) {
+  const automationMessageId = rawPayload?.perseo_automation?.message_id || null;
+  for (let index = 0; index < outbound.length; index += 1) {
+    const messageText = outbound[index];
     const row = await saveConversationMessage(supabase, {
       conversationId,
       direction: 'outbound',
       senderType: 'ai_agent',
       messageType: 'text',
       messageText,
+      metaMessageId: automationMessageId ? `perseo:${automationMessageId}:${index}` : null,
       rawPayload,
     });
     if (row?.id) rows.push(row);
   }
-  return { outbound, rows };
+  return {
+    outbound,
+    rows,
+    duplicate: rows.length > 0 && rows.every((row) => row?._deduplicated === true),
+  };
 }
 
 /**
@@ -710,6 +717,50 @@ async function runCleanOrchestratorCrmPhase({
   propertyId = null,
   crmGateContext = null,
 }) {
+  const p0Crm = require('./services/perseoP0Crm');
+  const p0Result = await p0Crm.commitP0CrmIntake({
+    supabase: db,
+    conversationId,
+    conversationRow,
+    aiState: nextAiState,
+    parsedSignals,
+    text,
+    property,
+    propertyId,
+    phone: from,
+    waProfileName,
+    rawPayload,
+  });
+  if (p0Result.handled) {
+    if (typeof crmGateContext?.logEvent === 'function') {
+      crmGateContext.logEvent(
+        p0Result.success ? 'p0_crm_committed' : 'p0_crm_fail_closed',
+        {
+          conversation_id: conversationId,
+          reason: p0Result.reason || null,
+          request_id: p0Result.result?.request_id || null,
+          contact_id: p0Result.result?.contact_id || null,
+          lead_id: p0Result.result?.lead_id || null,
+          replayed: p0Result.result?.replayed === true,
+          campaign_property_stripped: p0Result.strippedCampaignProperty === true,
+        },
+      );
+    }
+    return {
+      hasIntent: true,
+      canEnsureContact: p0Result.success,
+      contactId: p0Result.result?.contact_id || null,
+      leadResult: p0Result.success ? {
+        success: true,
+        leadId: p0Result.result?.lead_id || null,
+        requestId: p0Result.result?.request_id || null,
+        wasCreated: p0Result.result?.lead_created === true,
+      } : null,
+      p0Result,
+      failClosed: p0Result.failClosed === true,
+    };
+  }
+
   const resolvedPropertyId = propertyId != null ? propertyId : property?.id || null;
   const {
     shouldAllowCrmExecuteForInbound,
@@ -838,6 +889,9 @@ app.get('/webhook', (req, res) => {
 
 app.post('/webhook', async (req, res) => {
   const webhookStart = Date.now();
+  let turnTrace = null;
+  let recoveryContext = null;
+  let outboundCompleted = false;
   try {
     const { value, message } = extractInboundMessage(req.body);
     if (!message) {
@@ -891,6 +945,14 @@ app.post('/webhook', async (req, res) => {
     }
 
     const previousAiState = normalizeAiState(conversationRow?.ai_state);
+    turnTrace = require('./services/perseoTurnTrace').startTurnTrace({
+      conversationId,
+      inboundMessageId: metaMessageId,
+      text,
+      aiState: previousAiState,
+      conversationRow,
+      startedAt: webhookStart,
+    });
 
     await saveConversationEvent(conversationId, 'conversation_resolved', {
       conversation_id: conversationId,
@@ -922,7 +984,16 @@ app.post('/webhook', async (req, res) => {
       inbound_message_id: inboundRow?.id || null,
     });
 
-    const policy = await resolveAutomatedReplyPolicy({ supabase, conversationRow, from });
+    const policy = await resolveAutomatedReplyPolicy({
+      supabase,
+      conversationRow,
+      conversationId,
+      messageId: metaMessageId,
+      from,
+      channel: 'ia',
+      route: 'deterministic',
+      requestKind: 'direct',
+    });
     if (policy.policyResolution === 'error') {
       logEvent('perseo_policy_fail_closed', {
         conversation_id: conversationId,
@@ -983,8 +1054,13 @@ app.post('/webhook', async (req, res) => {
         to: from,
         messages: reply,
         conversationId,
+        messageId: metaMessageId,
+        conversationRow,
+        route: 'qa',
+        requestKind: 'direct',
+        qaSession: { isQa: true, authorized: true },
+        supabase,
         rawPayload: { perseo_metadata: { response_source: 'qa_sprint1', qa_command: cmd } },
-        policy,
         saveOutboundMessages,
         saveConversationEvent,
         logEvent,
@@ -1031,6 +1107,20 @@ app.post('/webhook', async (req, res) => {
     let nextAiState = buildNextState(previousAiState, parsedSignals, changeType);
     Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(parsedSignals, previousAiState, nextAiState, text));
     Object.assign(nextAiState, leadEntryPointRouter.reassertEntryLeadFlow(nextAiState, parsedSignals.__entry_point_meta));
+    recoveryContext = {
+      policyAllow: policy.allowAutomatedReply === true,
+      conversationId,
+      conversationRow,
+      from,
+      metaMessageId,
+      waProfileName,
+      text,
+      rawPayload: req.body || null,
+      parsedSignals,
+      aiState: nextAiState,
+      contact,
+      route: 'deterministic',
+    };
 
     if (
       isOwnerOfferSignal(parsedSignals, nextAiState) &&
@@ -1234,6 +1324,8 @@ app.post('/webhook', async (req, res) => {
     let skipOutboundSend = false;
     let selectedPipeline = 'legacy';
     let openingMetrics = null;
+    let legacyCrmResult = null;
+    recoveryContext.route = selectedPipeline;
 
     if (policy.allowAutomatedReply) {
       const cuarzoHandoff = require('./conversation/cuarzoHandoff');
@@ -1527,6 +1619,7 @@ app.post('/webhook', async (req, res) => {
         text,
         message,
         campaignContext,
+        property,
         previousAiState,
         parsedSignals,
       });
@@ -1907,6 +2000,7 @@ app.post('/webhook', async (req, res) => {
         nextAiState = v2.nextAiState || nextAiState;
         Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(parsedSignals, previousAiState, nextAiState, text));
         responseSource = v2.responseSource || 'engine_v2';
+        selectedPipeline = 'v2';
         logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: true });
       }
 
@@ -2107,12 +2201,46 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
+    const humanFallback = require('./services/perseoHumanFallback');
+    const modeBeforeSafetyFallback = String(
+      nextAiState.conversation_mode || nextAiState.handoff_state || '',
+    ).toUpperCase();
+    if (
+      policy.allowAutomatedReply &&
+      !skipOutboundSend &&
+      modeBeforeSafetyFallback !== 'HUMAN_WAITING' &&
+      !humanFallback.hasSafeAutomatedReply(reply)
+    ) {
+      const fallback = humanFallback.buildHumanFallback({
+        aiState: nextAiState,
+        parsedSignals,
+        reason: 'unsafe_or_missing_automated_reply',
+      });
+      reply = fallback.responseText;
+      responseSource = 'p0_human_fallback';
+      Object.assign(nextAiState, fallback.statePatch);
+      emitHumanHandoffRequired(
+        supabase,
+        {
+          conversationId,
+          contactId: contact?.id || conversationRow?.contact_id || null,
+          phone: from,
+          contactName: contact?.full_name || waProfileName || from,
+          reason: fallback.reason,
+        },
+        logEvent,
+      );
+      supabase.rpc('ensure_handoff_followup_task', { p_conversation_id: conversationId }).catch(() => {});
+    }
+
     nextAiState = applyInboundSourceToAiState(nextAiState, {
       messageText: text,
       aiState: previousAiState,
       referral: previousAiState?.whatsapp_referral || null,
       rawPayload: inboundRow?.raw_payload || req.body || {},
     });
+    recoveryContext.aiState = nextAiState;
+    recoveryContext.route = selectedPipeline;
 
     await saveConversationState(conversationId, nextAiState);
 
@@ -2141,7 +2269,7 @@ app.post('/webhook', async (req, res) => {
     await persistCrmExecuteGateEvent(saveConversationEvent, conversationId, crmExecuteGate);
 
     if (!skipLegacyCrm && crmExecuteGate.crm_execute_allowed) {
-      await runCleanOrchestratorCrmPhase({
+      legacyCrmResult = await runCleanOrchestratorCrmPhase({
         supabase,
         conversationId,
         conversationRow,
@@ -2160,6 +2288,26 @@ app.post('/webhook', async (req, res) => {
           logEvent,
         },
       });
+      if (legacyCrmResult?.failClosed) {
+        const reason = legacyCrmResult.p0Result?.reason || 'crm_integrity_conflict';
+        const fallback = humanFallback.buildHumanFallback({ aiState: nextAiState, parsedSignals, reason });
+        reply = fallback.responseText;
+        responseSource = 'p0_crm_human_fallback';
+        Object.assign(nextAiState, fallback.statePatch, { p0_crm_fail_closed: true });
+        emitHumanHandoffRequired(
+          supabase,
+          {
+            conversationId,
+            contactId: contact?.id || conversationRow?.contact_id || null,
+            phone: from,
+            contactName: contact?.full_name || waProfileName || from,
+            reason,
+          },
+          logEvent,
+        );
+        supabase.rpc('ensure_handoff_followup_task', { p_conversation_id: conversationId }).catch(() => {});
+        await saveConversationState(conversationId, nextAiState);
+      }
     } else if (!skipLegacyCrm) {
       logEvent('legacy_crm_execute_skipped', {
         conversation_id: conversationId,
@@ -2174,7 +2322,25 @@ app.post('/webhook', async (req, res) => {
     const outboundText = Array.isArray(reply)
       ? reply.map((s) => String(s || '').trim()).filter(Boolean).join('\n\n')
       : cleanSpaces(String(reply || ''));
+    const terminalTracePayload = {
+      stateAfter: nextAiState,
+      reply,
+      responseSource,
+      selectedPipeline,
+      crmResult: legacyCrmResult,
+      flags: {
+        p0_crm_recovery: process.env.PERSEO_P0_CRM_RECOVERY_ENABLED === 'true',
+        v3_enabled: process.env.PERSEO_V3_ENABLED === 'true',
+        rag_enabled: process.env.PERSEO_RAG_ENABLED === 'true',
+      },
+      model: String(responseSource || '').includes('engine') ? process.env.OPENAI_MODEL || null : null,
+    };
     if (skipOutboundSend || !outboundText) {
+      await require('./services/perseoTurnTrace').persistTerminalTurn(supabase, turnTrace, {
+        ...terminalTracePayload,
+        terminalResult: 'skipped',
+        skip: true,
+      });
       logEvent('perseo_outbound_skipped', {
         conversation_id: conversationId,
         response_source: responseSource,
@@ -2189,6 +2355,11 @@ app.post('/webhook', async (req, res) => {
         to: from,
         messages: reply,
         conversationId,
+        messageId: metaMessageId,
+        conversationRow,
+        route: selectedPipeline,
+        requestKind: 'direct',
+        supabase,
         rawPayload: {
           perseo_metadata: {
             response_source: responseSource,
@@ -2201,10 +2372,17 @@ app.post('/webhook', async (req, res) => {
             handoff_reason: nextAiState.handoff_reason || null,
           },
         },
-        policy,
         saveOutboundMessages,
         saveConversationEvent,
         logEvent,
+      });
+      outboundCompleted = true;
+      await require('./services/perseoTurnTrace').persistTerminalTurn(supabase, turnTrace, {
+        ...terminalTracePayload,
+        terminalResult: responseSource.includes('human_fallback')
+          ? 'HUMAN_FALLBACK_SENT'
+          : 'AUTOMATED_RESPONSE_SENT',
+        skip: false,
       });
     }
 
@@ -2217,6 +2395,99 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
   } catch (err) {
     console.error('webhook_post_fatal', err);
+    let fallbackSent = false;
+    const recoveryMode = String(
+      recoveryContext?.aiState?.conversation_mode || recoveryContext?.aiState?.handoff_state || '',
+    ).toUpperCase();
+    if (recoveryContext?.policyAllow && !outboundCompleted && recoveryMode !== 'HUMAN_WAITING') {
+      try {
+        const fallback = require('./services/perseoHumanFallback').buildHumanFallback({
+          aiState: recoveryContext.aiState,
+          parsedSignals: recoveryContext.parsedSignals,
+          reason: `runtime_exception:${err?.code || err?.name || 'unknown'}`,
+        });
+        Object.assign(recoveryContext.aiState, fallback.statePatch);
+        try {
+          await saveConversationState(recoveryContext.conversationId, recoveryContext.aiState);
+        } catch (_stateErr) {
+          /* el envío fail-safe no depende de una segunda escritura de estado */
+        }
+        let fallbackCrmResult = null;
+        try {
+          fallbackCrmResult = await runCleanOrchestratorCrmPhase({
+            supabase,
+            conversationId: recoveryContext.conversationId,
+            conversationRow: recoveryContext.conversationRow,
+            nextAiState: recoveryContext.aiState,
+            parsedSignals: recoveryContext.parsedSignals,
+            text: recoveryContext.text,
+            contact: recoveryContext.contact,
+            from: recoveryContext.from,
+            waProfileName: recoveryContext.waProfileName,
+            rawPayload: recoveryContext.rawPayload,
+            property: null,
+            propertyId: null,
+          });
+        } catch (fallbackCrmErr) {
+          logEvent('p0_runtime_fallback_crm_failed', {
+            conversation_id: recoveryContext.conversationId,
+            error: String(fallbackCrmErr?.message || fallbackCrmErr),
+          });
+        }
+        emitHumanHandoffRequired(
+          supabase,
+          {
+            conversationId: recoveryContext.conversationId,
+            contactId: recoveryContext.contact?.id || recoveryContext.conversationRow?.contact_id || null,
+            phone: recoveryContext.from,
+            contactName:
+              recoveryContext.contact?.full_name || recoveryContext.waProfileName || recoveryContext.from,
+            reason: fallback.reason,
+          },
+          logEvent,
+        );
+        supabase
+          .rpc('ensure_handoff_followup_task', { p_conversation_id: recoveryContext.conversationId })
+          .catch(() => {});
+        await sendPerseoAutomatedWhatsApp({
+          channel: 'ia',
+          to: recoveryContext.from,
+          messages: fallback.responseText,
+          conversationId: recoveryContext.conversationId,
+          messageId: recoveryContext.metaMessageId,
+          conversationRow: recoveryContext.conversationRow,
+          route: recoveryContext.route || 'deterministic',
+          requestKind: 'direct',
+          supabase,
+          rawPayload: { perseo_metadata: { response_source: 'p0_runtime_human_fallback' } },
+          saveOutboundMessages,
+          saveConversationEvent,
+          logEvent,
+        });
+        fallbackSent = true;
+        await require('./services/perseoTurnTrace').persistTerminalTurn(supabase, turnTrace, {
+          stateAfter: recoveryContext.aiState,
+          reply: fallback.responseText,
+          responseSource: 'p0_runtime_human_fallback',
+          selectedPipeline: recoveryContext.route || 'deterministic',
+          crmResult: fallbackCrmResult,
+          terminalResult: 'HUMAN_FALLBACK_SENT',
+          error: err,
+        });
+      } catch (fallbackErr) {
+        console.error('webhook_human_fallback_fatal', fallbackErr);
+      }
+    }
+    if (!fallbackSent) {
+      try {
+        await require('./services/perseoTurnTrace').persistTerminalTurn(supabase, turnTrace, {
+          terminalResult: 'failed',
+          error: err,
+        });
+      } catch (_traceErr) {
+        /* terminal trace is best-effort when the database itself failed */
+      }
+    }
     try {
       const { endWebhookTiming } = require('./conversation/v3/runtime/runtimeSafety');
       endWebhookTiming(webhookStart);
@@ -2267,4 +2538,3 @@ module.exports = {
     fetchPropertyByListingCode,
   },
 };
-

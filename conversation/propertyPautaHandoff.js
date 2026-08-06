@@ -16,6 +16,59 @@ const {
 const PROPERTY_PAUTA_HANDOFF_REPLY =
   'En breve te contactará el asesor que tiene esta propiedad asignada. Gracias por tu interés.';
 
+function propertySnapshot(property = null) {
+  const row = property?.raw && typeof property.raw === 'object' ? property.raw : property || {};
+  return {
+    title: cleanSpaces(String(property?.title || row.title || '')) || null,
+    operation: cleanSpaces(String(property?.operation_type || row.operation_type || '')) || null,
+    location:
+      cleanSpaces(
+        String(property?.neighborhood || row.neighborhood || property?.zone || row.zone || '')
+      ) || null,
+    price: Number(property?.price || row.price || 0) || null,
+    currency: cleanSpaces(String(property?.currency_code || row.currency_code || 'MXN')) || 'MXN',
+  };
+}
+
+function buildPropertyPautaReply({ parsed = {}, property = null, text = '' } = {}) {
+  const snapshot = propertySnapshot(property);
+  const action = normalizeText(String(parsed?.labeled?.operation_raw || text || ''));
+  const asksVisit = /agendar\s+una\s+visita|visitar|conocer\s+la\s+propiedad/.test(action);
+  const asksAdvisor = /hablar\s+con\s+un\s+asesor|asesor/.test(action);
+  const propertyName = snapshot.title ? ` “${snapshot.title}”` : '';
+
+  if (asksVisit) {
+    if (!snapshot.title) {
+      return 'Gracias, ya recibí tu solicitud de visita. Primero validaremos el anuncio de origen para no asociarla con otra propiedad. Un asesor te contactará para continuar.';
+    }
+    return `Gracias, ya recibí tus datos y tu solicitud para visitar${propertyName}. El asesor responsable confirmará contigo disponibilidad y horario.`;
+  }
+  if (asksAdvisor) {
+    if (!snapshot.title) {
+      return 'Gracias, ya recibí tu solicitud para hablar con un asesor. Te contactará para continuar.';
+    }
+    return `Gracias, ya recibí tus datos y tu interés en${propertyName}. El asesor responsable te contactará para continuar.`;
+  }
+  if (!snapshot.title) {
+    return 'Gracias, ya recibí tus datos y tu solicitud de información. Primero validaremos el anuncio de origen para no darte datos de otra propiedad; un asesor te contactará para continuar.';
+  }
+
+  const facts = [];
+  if (snapshot.operation) facts.push(snapshot.operation === 'rent' ? 'en renta' : 'en venta');
+  if (snapshot.location) facts.push(`en ${snapshot.location}`);
+  if (snapshot.price) {
+    facts.push(
+      `por ${new Intl.NumberFormat('es-MX', {
+        style: 'currency',
+        currency: snapshot.currency,
+        maximumFractionDigits: 0,
+      }).format(snapshot.price)}`
+    );
+  }
+  const detail = facts.length ? ` Está ${facts.join(' ') }.` : '';
+  return `Gracias, ya recibí tus datos y tu interés en “${snapshot.title}”.${detail} El asesor responsable confirmará disponibilidad contigo y puede ayudarte a agendar una visita.`;
+}
+
 const DEMAND_FORM_ACTION_PATTERNS = [
   /recibir\s+mas\s+informaci/,
   /recibir\s+m[aá]s\s+informaci/,
@@ -157,6 +210,7 @@ function buildPropertyPautaHandoffStatePatch({
     email: parsed?.email || null,
     handoff_sent: true,
     wants_human: true,
+    conversation_mode: 'HUMAN_WAITING',
     advisor_contact_consent: 'ACCEPTED',
     awaiting_field: null,
     handoff_stage: 'HANDOFF_READY',
@@ -193,6 +247,7 @@ function tryPropertyPautaHandoffTurn({
   text,
   message,
   campaignContext,
+  property = null,
   previousAiState = {},
   parsedSignals = {},
 }) {
@@ -210,11 +265,18 @@ function tryPropertyPautaHandoffTurn({
     return { handled: false };
   }
 
+  // El gate de conversation_mode debe conservar el control después del
+  // handoff. Nunca repetir el mismo mensaje ante un follow-up o ante un
+  // mensaje del asesor dentro del hilo.
+  if (!demandMetaForm && previousAiState.property_pauta_handoff_sent === true) {
+    return { handled: false, reason: 'post_handoff_mode_gate' };
+  }
+
   if (demandMetaForm) {
     const parsed = mergeParsedLeadForm({ text, message, parsedSignals, previousAiState });
     return {
       handled: true,
-      reply: PROPERTY_PAUTA_HANDOFF_REPLY,
+      reply: buildPropertyPautaReply({ parsed, property, text }),
       statePatch: buildPropertyPautaHandoffStatePatch({
         parsed,
         campaignContext,
@@ -247,6 +309,7 @@ function tryPropertyPautaHandoffTurn({
 
 module.exports = {
   PROPERTY_PAUTA_HANDOFF_REPLY,
+  buildPropertyPautaReply,
   isPropertyDemandMetaLeadForm,
   isPropertyPautaHandoffThread,
   tryPropertyPautaHandoffTurn,

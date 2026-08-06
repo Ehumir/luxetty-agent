@@ -7,14 +7,14 @@
  * No añadir `axios.post(.../messages)` en otros módulos de runtime; validar con:
  *   npm run validate:graph-outbound
  *
- * Los jobs de inactividad / smoke scripts inyectan su propio transporte y quedan fuera
- * de este contrato hasta un sprint dedicado.
+ * Webhook, QA y jobs de inactividad deben reevaluar la misma política aquí justo antes
+ * de persistir y enviar.
  */
 
 const axios = require('axios');
 const { WHATSAPP_TOKEN, PHONE_NUMBER_ID, GRAPH_API_VERSION } = require('../config/env');
 const { normalizeOutboundMessages } = require('../utils/helpers');
-const { PERSEO_REASON_CODES } = require('../conversation/perseoGatekeeper');
+const { PERSEO_REASON_CODES, resolveAutomationPolicy } = require('../conversation/perseoGatekeeper');
 
 const EVENT_AUTOMATION_BLOCKED = 'ai_auto_response_skipped_human_attention';
 
@@ -55,14 +55,25 @@ async function sendPerseoAutomatedWhatsApp({
   to,
   messages,
   conversationId,
+  messageId,
+  conversationRow = null,
+  route,
+  requestKind = 'direct',
+  qaSession = null,
+  supabase = null,
   rawPayload = {},
-  policy,
   saveOutboundMessages,
   saveConversationEvent,
   logEvent,
   argosMode = false,
+  env = process.env,
+  globalPolicyRow = null,
+  recordDecision = null,
+  checkMessageProcessed = null,
+  resolvePolicy = resolveAutomationPolicy,
+  sendTransport = graphPostWhatsAppText,
 }) {
-  if (argosMode === true || rawPayload?.argosMode === true || policy?.argosMode === true) {
+  if (argosMode === true || rawPayload?.argosMode === true) {
     const err = new Error('ARGOS_WHATSAPP_BLOCKED');
     err.code = 'ARGOS_WHATSAPP_BLOCKED';
     if (typeof logEvent === 'function') {
@@ -80,46 +91,100 @@ async function sendPerseoAutomatedWhatsApp({
     return { sent: false, reason_code: PERSEO_REASON_CODES.OUTBOUND_MESSAGES_EMPTY };
   }
 
-  if (channel === 'ia' && !policy.allowAutomatedReply) {
+  let alreadyProcessed = false;
+  if (typeof checkMessageProcessed === 'function') {
+    alreadyProcessed = await checkMessageProcessed({ conversationId, messageId, requestKind });
+  } else if (supabase && conversationId && messageId) {
+    const { data, error } = await supabase
+      .from('conversation_messages')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('direction', 'outbound')
+      .contains('raw_payload', { perseo_automation: { message_id: messageId } })
+      .limit(1);
+    alreadyProcessed = !error && Array.isArray(data) && data.length > 0;
+    if (error) alreadyProcessed = true;
+  }
+
+  const policy = await resolvePolicy({
+    supabase,
+    conversationRow,
+    conversationId,
+    messageId,
+    from: to,
+    channel,
+    route,
+    requestKind,
+    qaSession,
+    messageAlreadyProcessed: alreadyProcessed,
+    env,
+    globalPolicyRow,
+    recordDecision,
+  });
+
+  if (!policy.allowAutomatedReply) {
     if (typeof logEvent === 'function') {
       logEvent('perseo_automation_blocked', {
         conversation_id: conversationId,
         reason_code: policy.reason_code,
         policy_resolution: policy.policyResolution,
-        channel: 'ia',
+        channel,
+        route,
       });
     }
     if (typeof saveConversationEvent === 'function') {
       await saveConversationEvent(conversationId, EVENT_AUTOMATION_BLOCKED, {
         reason_code: policy.reason_code,
         policy_resolution: policy.policyResolution,
-        channel: 'ia',
+        channel,
+        route,
         via: 'outbound_wrapper',
       });
     }
     return { sent: false, reason_code: policy.reason_code };
   }
 
-  if (channel === 'qa' && !policy.allowQaBypass) {
-    if (typeof logEvent === 'function') {
-      logEvent('perseo_qa_outbound_denied', {
-        conversation_id: conversationId,
-        reason_code: PERSEO_REASON_CODES.QA_OUTBOUND_NOT_ALLOWLISTED,
-      });
-    }
-    if (typeof saveConversationEvent === 'function') {
-      await saveConversationEvent(conversationId, 'qa_outbound_denied_not_allowlist', {
-        conversation_id: conversationId,
-      });
-    }
-    return { sent: false, reason_code: PERSEO_REASON_CODES.QA_OUTBOUND_NOT_ALLOWLISTED };
-  }
-
   const persisted = await saveOutboundMessages({
     conversationId,
     messages: outbound,
-    rawPayload,
+    rawPayload: {
+      ...rawPayload,
+      perseo_automation: {
+        ...(rawPayload?.perseo_automation || {}),
+        message_id: messageId,
+        route,
+        request_kind: requestKind,
+        decision: policy.decision,
+        reason_code: policy.reason_code,
+      },
+    },
   });
+
+  if (persisted?.duplicate === true) {
+    const duplicatePolicy = await resolvePolicy({
+      supabase,
+      conversationRow,
+      conversationId,
+      messageId,
+      from: to,
+      channel,
+      route,
+      requestKind,
+      qaSession,
+      messageAlreadyProcessed: true,
+      env,
+      globalPolicyRow,
+      recordDecision,
+    });
+    if (typeof logEvent === 'function') {
+      logEvent('perseo_outbound_duplicate_blocked', {
+        conversation_id: conversationId,
+        message_id: messageId,
+        route,
+      });
+    }
+    return { sent: false, reason_code: duplicatePolicy.reason_code, duplicate: true };
+  }
 
   if (typeof logEvent === 'function') {
     logEvent('perseo_outbound_wrapper_persisted', {
@@ -130,7 +195,7 @@ async function sendPerseoAutomatedWhatsApp({
   }
 
   for (const body of outbound) {
-    await graphPostWhatsAppText(to, body);
+    await sendTransport(to, body);
   }
 
   if (typeof logEvent === 'function') {

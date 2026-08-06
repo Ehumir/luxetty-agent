@@ -174,7 +174,8 @@ function appendNameRequestIfNeeded(messages, context = {}) {
     return { messages, statePatch: {}, setAwaitingFullName: false };
   }
 
-  if (aiState?.handoff_sent || aiState?.wants_human) {
+  const isLegacyCourtesyClose = /si\s+surge\s+algo\s+m[aá]s/i.test(merged);
+  if (aiState?.wants_human || (aiState?.handoff_sent && !isLegacyCourtesyClose)) {
     return { messages, statePatch: {}, setAwaitingFullName: false };
   }
 

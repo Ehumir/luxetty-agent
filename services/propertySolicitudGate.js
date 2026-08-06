@@ -14,6 +14,21 @@ function isPropertyAdContext({ parsedSignals = {}, aiState = {}, propertyId = nu
   return leadEntryPointRouter.isPropertyAdEntry(text || '');
 }
 
+function isCompletedSellerCapture({ parsedSignals = {}, aiState = {} }) {
+  const sellerFlow =
+    aiState.lead_flow === 'offer' ||
+    aiState.intent_lock_sale_owner === true ||
+    parsedSignals.lead_flow === 'offer' ||
+    parsedSignals.intent_lock_sale_owner === true;
+  const completedForm =
+    aiState.meta_lead_form_flow === true &&
+    (aiState.meta_lead_form_ack_sent === true ||
+      aiState.qualification_complete === true ||
+      aiState.crm_payload_ready === true);
+
+  return sellerFlow && completedForm;
+}
+
 async function findRecentPropertySolicitudWithIntake(supabase, { normalizedPhone, propertyId }) {
   try {
     const intakeHydration = require('./intake/intakeHydration');
@@ -96,6 +111,21 @@ async function evaluatePropertySolicitudGate({
   const normalizedPhone = normalizePhoneNumber(phone) || phone;
   const resolvedPropertyId = propertyId || aiState.interested_property_id || null;
 
+  // A completed owner/seller form is already the intake. A campaign property
+  // accidentally resolved on the same turn must never replace it with a
+  // property-demand capture gate.
+  if (isCompletedSellerCapture({ parsedSignals, aiState })) {
+    return {
+      requiresCapture: false,
+      leadId: conversationRow?.lead_id || aiState.lead_id || null,
+      statePatch: {
+        property_solicitud_pending: false,
+        property_solicitud_capture_url: null,
+      },
+      bypassReason: 'completed_seller_capture',
+    };
+  }
+
   if (!isPropertyAdContext({ parsedSignals, aiState, propertyId: resolvedPropertyId, text })) {
     return { requiresCapture: false, leadId: conversationRow?.lead_id || aiState.lead_id || null };
   }
@@ -146,6 +176,7 @@ async function evaluatePropertySolicitudGate({
 
 module.exports = {
   evaluatePropertySolicitudGate,
+  isCompletedSellerCapture,
   buildCaptureUrl,
   buildGateMessages,
   findRecentPropertySolicitud,

@@ -21,6 +21,7 @@ after(() => {
 const { processV3Turn, clearV3Session, ADVISOR_CONTACT_CONSENT, V3_INTENT } = require('../conversation/v3');
 const { mergeConversationState } = require('../conversation/v3/types/conversationState');
 const { getSession, setSession } = require('../conversation/v3/core/sessionStore');
+const { buildConversationSnapshot } = require('../argos/conversationSnapshot');
 
 describe('F3.3A PROPERTY_QA_MODE + anti-loop', () => {
   it('tras nombre entra a PROPERTY_QA sin consent pending ni handoff inmediato', () => {
@@ -53,6 +54,10 @@ describe('F3.3A PROPERTY_QA_MODE + anti-loop', () => {
     const r = processV3Turn({ conversationId: cid, phone: '521', text: '¿Cuánto cuesta?' });
     assert.match(String(r.reply || ''), /6[, ]?500[, ]?000|6500000|precio listado/i);
     assert.ok((r.state.propertyQaAnswerCount || 0) >= 1);
+    const snapshot = buildConversationSnapshot(r.state, { property_code: 'LUX-A9999' });
+    assert.equal(snapshot.property_code, r.state.propertyListingCode);
+    assert.deepEqual(snapshot.active_property, r.state.activeProperty);
+    assert.deepEqual(snapshot.field_sources, r.state.fieldProvenance);
   });
 
   it('"mmm ok" en QA sin respuesta factual previa no acepta consentimiento ni fuerza CTA de contacto', () => {

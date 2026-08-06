@@ -95,10 +95,11 @@ function pickStoredMimeType(descriptor, metadata, download) {
   return desc || hints[0] || down || null;
 }
 
-function getAuthHeaders() {
+function getAuthHeaders(options = {}) {
   const token = WHATSAPP_TOKEN || META_ACCESS_TOKEN || null;
 
   if (!token) {
+    if (options.allowMissing === true) return {};
     const error = new Error('whatsapp_token_missing');
     error.code = 'whatsapp_token_missing';
     throw error;
@@ -262,7 +263,7 @@ async function getWhatsAppMediaMetadata(mediaId, options = {}) {
 
   try {
     const response = await httpClient.get(`${GRAPH_BASE_URL}/${encodeURIComponent(mediaId)}`, {
-      headers: getAuthHeaders(),
+      headers: getAuthHeaders({ allowMissing: options.httpClient != null }),
       timeout,
       validateStatus: (status) => status >= 200 && status < 300,
     });
@@ -289,7 +290,7 @@ async function downloadWhatsAppMedia(mediaUrl, options = {}) {
 
   try {
     const response = await httpClient.get(mediaUrl, {
-      headers: getAuthHeaders(),
+      headers: getAuthHeaders({ allowMissing: options.httpClient != null }),
       timeout,
       responseType: 'arraybuffer',
       maxContentLength: maxBytes,

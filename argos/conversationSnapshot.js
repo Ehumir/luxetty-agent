@@ -25,7 +25,18 @@ function buildConversationSnapshot(v3State, legacyAiState = {}) {
     known_name: v3State?.collectedFields?.fullName || legacy.full_name || null,
     known_budget: v3State?.budget ?? legacy.budget_max ?? legacy.budget_min ?? null,
     known_zone: v3State?.locationText || legacy.location_text || null,
+    known_bedrooms: v3State?.bedrooms ?? null,
+    property_type: v3State?.propertyType || null,
     property_code: v3State?.propertyListingCode || legacy.property_code || null,
+    active_property: v3State?.activeProperty || null,
+    authorized_inventory: Array.isArray(v3State?.matchedOptions) ? v3State.matchedOptions : [],
+    active_topic: v3State?.activeTopic || null,
+    show_batch: v3State?.showBatch || v3State?.matchedOptions || [],
+    conversation_mode: v3State?.mode || null,
+    handoff_state: v3State?.handoffStage || null,
+    field_sources: v3State?.fieldProvenance || {},
+    last_change: v3State?.lastStateMutation || null,
+    mutation_reason: v3State?.lastStateMutation?.reason || null,
     interested_property_id:
       v3State?.activeProperty?.id != null
         ? String(v3State.activeProperty.id)

@@ -63,6 +63,7 @@ function isSocialReferenceText(text = '') {
 function isBuyerSearchText(text = '') {
   const t = normalizeText(String(text || ''));
   if (!t || hasExplicitSellerKeywords(t)) return false;
+  if (/^(compra|comprar)\s*[.!?]*$/.test(t)) return true;
   if (mentionsBuyDemand(t)) return true;
   return (
     /\bbusco\b/.test(t) ||
@@ -74,6 +75,7 @@ function isBuyerSearchText(text = '') {
 function isRentSearchText(text = '') {
   const t = normalizeText(String(text || ''));
   if (!t || hasExplicitSellerKeywords(t)) return false;
+  if (/^(renta|rentar|alquiler)\s*[.!?]*$/.test(t)) return true;
   if (t.includes('rentar mi') || t.includes('poner en renta')) return false;
   // Alineado con campaignIntake.mentionsRentDemand (inventario / cert).
   if (mentionsRentDemand(t)) return true;

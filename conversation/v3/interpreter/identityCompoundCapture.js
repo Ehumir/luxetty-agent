@@ -33,7 +33,7 @@ function isLikelyFirstNameOnly(head) {
     return false;
   }
   const words = h.split(/\s+/).filter(Boolean);
-  if (words.length > 3) return false;
+  if (words.length > 4) return false;
   if (
     words.length > 1 &&
     /^(hola|buenas|hey|perdon|perdón|mejor|mas|más|ok|vale|claro|si|sí|la|el|los|las|sin|con|mas|más)$/.test(

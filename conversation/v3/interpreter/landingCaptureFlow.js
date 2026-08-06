@@ -71,7 +71,10 @@ function matchesLandingCaptureInbound(input) {
   if (/prevaluaci[oó]n/.test(text)) score += 1;
   if (/cumbres|zona\s+poniente/.test(text)) score += 1;
   if (/propiedad/.test(text) && /(cumbres|poniente|colonia|zona)/.test(text)) score += 1;
-  if (/\b(mi\s+)?casa\b/.test(text) && /cumbres/.test(text)) score += 2;
+  // Una conversación natural ("quiero vender mi casa en Cumbres") no prueba
+  // que provenga de la landing. El origen de campaña requiere una señal técnica
+  // o textual adicional; zona + tipo de inmueble por sí solos no bastan.
+  if (/\b(mi\s+)?casa\b/.test(text) && /cumbres/.test(text)) score += 0;
   if (/venta\s+o\s+renta|mejor\s+opci[oó]n/.test(text)) score += 1;
   if (/campa[nñ]a\s+de\s+prevaluaci[oó]n/.test(text)) score += 2;
   if (/hola\s+luxetty/.test(text)) score += 1;

@@ -1,6 +1,7 @@
 'use strict';
 
 const { mergeConversationState } = require('../types/conversationState');
+const { mergeEffectiveRuntimeState } = require('./effectiveStateMerge');
 const { evaluateRuleGuard } = require('../rules/ruleGuard');
 const { resolveNextStage } = require('../stages/stageEngine');
 const { resolveIdentityState } = require('../identity/identityResolver');
@@ -16,7 +17,24 @@ function applyV3StateTransition(state, patch, decision) {
   const prevStage = state.conversationStage;
   const prevIdentity = state.identityState;
   const ownedPatch = applyGoalOwnership(state, patch, decision);
-  let next = mergeConversationState(state, ownedPatch);
+  const entityFields = Object.keys(decision.extractedEntities || {}).map((field) =>
+    field === 'fullName' ? 'collectedFields.fullName' : field,
+  );
+  const explicitFields = new Set(entityFields);
+  if (decision.explicitFlowSwitch) {
+    for (const field of ['operationType', 'propertyListingCode', 'activeProperty']) {
+      if (ownedPatch[field] !== undefined) explicitFields.add(field);
+    }
+  }
+  let next = mergeEffectiveRuntimeState(state, ownedPatch, {
+    source: 'customer_current_turn',
+    confidence: decision.confidence || 0,
+    reason: decision.detectedIntent || 'interpreted_customer_turn',
+    explicitFields: [...explicitFields],
+    allowClearFields: decision.explicitFlowSwitch
+      ? ['propertyListingCode', 'activeProperty', 'showBatch']
+      : [],
+  });
   next = mergeConversationState(next, { identityState: resolveIdentityState(next) });
   const stage = resolveNextStage(next.conversationStage, decision, next);
   next = mergeConversationState(next, { conversationStage: stage });
