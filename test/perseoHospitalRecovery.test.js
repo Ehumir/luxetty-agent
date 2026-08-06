@@ -35,6 +35,8 @@ const { resolveInventoryOptionsForTurn } = require('../services/inventoryOptions
 const inventoryOptionsService = require('../services/inventoryOptionsService');
 const { buildHumanFallback, hasSafeAutomatedReply } = require('../services/perseoHumanFallback');
 const { commitP0CrmIntake } = require('../services/perseoP0Crm');
+const { startTurnTrace, buildTerminalRow } = require('../services/perseoTurnTrace');
+const { resolveAutomationPolicy } = require('../conversation/perseoGatekeeper');
 
 describe('PERSEO P0 — Hospital Materno Infantil', () => {
   it('reconoce el hito geográfico y pide nombre + presupuesto sin mostrar inventario', () => {
@@ -149,5 +151,72 @@ describe('PERSEO P0 — CRM provisional y fallback terminal', () => {
     assert.equal(result.terminalResult, 'HUMAN_FALLBACK_SENT');
     assert.equal(hasSafeAutomatedReply(''), false);
     assert.equal(hasSafeAutomatedReply('Perfecto, perfecto.'), false);
+  });
+
+  it('CONTROLLED_CASE_10 conserva el outcome detallado en una traza compatible con producción', () => {
+    const fallback = buildHumanFallback({
+      aiState: {
+        lead_flow: 'demand',
+        operation_type: 'rent',
+        property_type: 'apartment',
+        location_text: 'Zona Valle',
+      },
+      reason: 'inventory_dependency_low_confidence',
+    });
+    const stateAfter = {
+      lead_flow: 'demand',
+      operation_type: 'rent',
+      property_type: 'apartment',
+      location_text: 'Zona Valle',
+      ...fallback.statePatch,
+    };
+    const trace = startTurnTrace({
+      conversationId: '33333333-3333-4333-8333-333333333333',
+      inboundMessageId: 'wamid.controlled-10',
+      text: 'Busco departamento en renta en Zona Valle',
+      aiState: {},
+      conversationRow: {},
+    });
+    const row = buildTerminalRow(trace, {
+      stateAfter,
+      reply: fallback.responseText,
+      responseSource: 'p0_runtime_human_fallback',
+      terminalResult: fallback.terminalResult,
+      crmResult: {
+        p0Result: {
+          success: true,
+          result: { contact_id: 'c-10', lead_id: 'l-10', request_id: 'r-10' },
+        },
+      },
+    });
+    assert.equal(row.terminal_result, 'sent');
+    assert.equal(row.decision.outcome, 'HUMAN_FALLBACK_SENT');
+    assert.equal(row.state_after.conversation_mode, 'HUMAN_WAITING');
+    assert.equal(row.entity_refs.request_id, 'r-10');
+    assert.match(row.response_redacted, /asesor de Luxetty continuará contigo/i);
+  });
+
+  it('CONTROLLED_CASE_10 bloquea cualquier outbound posterior en HUMAN_WAITING', async () => {
+    const conversationId = '33333333-3333-4333-8333-333333333333';
+    const decision = await resolveAutomationPolicy({
+      conversationId,
+      messageId: 'wamid.controlled-10-followup',
+      conversationRow: { ai_state: { conversation_mode: 'HUMAN_WAITING' } },
+      route: 'followup',
+      requestKind: 'followup',
+      globalPolicyRow: { human_only_global: true, automation_enabled: false },
+      recordDecision: async () => {},
+      env: {
+        NODE_ENV: 'production',
+        PERSEO_AUTOMATION_MODE: 'CANARY_ALLOWLIST',
+        PERSEO_AUTOMATED_RESPONSES_ENABLED: 'true',
+        PERSEO_CANARY_ENABLED: 'true',
+        PERSEO_CANARY_CONVERSATION_IDS: conversationId,
+        PERSEO_FOLLOWUPS_ENABLED: 'true',
+        PERSEO_KILL_SWITCH: 'false',
+      },
+    });
+    assert.equal(decision.allowAutomatedReply, false);
+    assert.equal(decision.reason_code, 'HUMAN_WAITING_ACTIVE');
   });
 });

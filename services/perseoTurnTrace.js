@@ -5,6 +5,14 @@ const { classifyOrigin } = require('./perseoP0Crm');
 
 const PROMPT_VERSION = 'perseo-p0-recovery-v1';
 const PROMPT_HASH = crypto.createHash('sha256').update(PROMPT_VERSION).digest('hex');
+const TERMINAL_RESULTS = new Set(['sent', 'skipped', 'failed', 'duplicate']);
+
+function normalizeTerminalResult(value) {
+  const raw = String(value || 'failed');
+  if (TERMINAL_RESULTS.has(raw)) return raw;
+  if (raw === 'AUTOMATED_RESPONSE_SENT' || raw === 'HUMAN_FALLBACK_SENT') return 'sent';
+  return 'failed';
+}
 
 function redactText(value) {
   return String(value || '')
@@ -83,7 +91,11 @@ function buildTerminalRow(trace, details = {}) {
       deterministic: !String(details.responseSource || '').includes('engine'),
     },
     flags: redactObject(details.flags || {}),
-    decision: redactObject({ response_source: details.responseSource || null, skip: details.skip === true }),
+    decision: redactObject({
+      response_source: details.responseSource || null,
+      outcome: details.terminalResult || 'failed',
+      skip: details.skip === true,
+    }),
     response_redacted: redactText(reply),
     state_after: redactObject(stateAfter),
     crm_result: redactObject(crm),
@@ -98,7 +110,7 @@ function buildTerminalRow(trace, details = {}) {
       at: stateAfter.handoff_at || null,
       by: stateAfter.handoff_by || (stateAfter.handoff_sent ? 'perseo' : null),
     }),
-    terminal_result: details.terminalResult || 'failed',
+    terminal_result: normalizeTerminalResult(details.terminalResult),
     error: redactObject(details.error ? { message: details.error.message || String(details.error) } : {}),
   };
 }
@@ -116,6 +128,7 @@ module.exports = {
   PROMPT_HASH,
   redactText,
   redactObject,
+  normalizeTerminalResult,
   startTurnTrace,
   buildTerminalRow,
   persistTerminalTurn,
