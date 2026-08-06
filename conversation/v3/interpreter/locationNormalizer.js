@@ -27,6 +27,22 @@ function normalizeLocationFromUserText(raw) {
   const lower = normalizeText(t);
   let explicitLocation = false;
 
+  // Referencias geográficas naturales a hitos (p. ej. hospitales). La frase
+  // introductoria aporta el contexto geográfico; no se acepta texto libre sin
+  // ese ancla.
+  const landmark = t.match(
+    /\b(?:por\s+(?:el\s+)?[aá]rea\s+d(?:e|el)|cerca\s+d(?:e|el)|alrededor\s+d(?:e|el))\s+(.+?)(?=\s*(?:[,.?!]|$))/i,
+  );
+  if (landmark?.[1]) {
+    const value = cleanSpaces(landmark[1]).replace(/^(?:la|el)\s+/i, '');
+    if (value && value.length <= 80 && !/\b(?:presupuesto|pesos|rec[aá]maras?)\b/i.test(value)) {
+      return value
+        .split(/\s+/)
+        .map((word) => word.length ? word[0].toUpperCase() + word.slice(1).toLowerCase() : word)
+        .join(' ');
+    }
+  }
+
   const fuzzy = isConversationalFlexEnabled() ? fuzzyResolveZone(t) : null;
   if (fuzzy) {
     recordFlexApplied('zone', { canonical: fuzzy });

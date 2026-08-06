@@ -416,15 +416,21 @@ function tryComposeInventoryOptionsReply(state) {
     meta.attempted === true ||
     options.length > 0;
   if (!isDemand) return null;
+  const operation = meta.operation || state.operationType || state.operation_type || null;
+  const propertyType =
+    state.propertyType || state.property_type || state.collectedFields?.propertyType || null;
+  const zone = meta.zone || state.locationText || state.location_text || null;
+  const budget = meta.budgetMax ?? state.budget ?? state.budgetMax ?? state.budget_max ?? null;
+  if (!operation || !propertyType || !zone || budget == null) return null;
+  if (meta.relaxedZone === true && state.zoneExpansionAccepted !== true) return null;
   const lines = formatInventoryOptionLines(options);
   if (lines.length) {
-    const nm = firstName(state) || 'perfecto';
+    const nm = firstName(state);
     const opLabel =
       goal === CONVERSATION_GOALS.RENT_PROPERTY || meta.operation === 'rent' || state.operationType === 'rent'
         ? 'renta'
         : 'venta';
-    const zone = meta.zone || state.locationText || null;
-    const budget =
+    const budgetLabel =
       meta.budgetMax != null
         ? formatMoneyMx(meta.budgetMax)
         : state.budget != null
@@ -432,14 +438,14 @@ function tryComposeInventoryOptionsReply(state) {
           : null;
     const ctxBits = [];
     if (zone) ctxBits.push(zone);
-    if (budget) ctxBits.push(`hasta ${budget}`);
+    if (budgetLabel) ctxBits.push(`hasta ${budgetLabel}`);
     const ctx =
       ctxBits.length > 0
         ? `Para ${opLabel} en ${ctxBits.join(', ')}, estas son opciones reales del inventario Luxetty`
         : `Para ${opLabel}, estas son opciones reales del inventario Luxetty`;
     const relax = meta.relaxedZone ? ' (amplié un poco la zona para mostrarte alternativas).' : '.';
     return {
-      responseText: `Perfecto, ${nm}. ${ctx}${relax}\n${lines.join('\n')}\n\n¿Te interesa alguna o prefieres que un asesor confirme disponibilidad?`,
+      responseText: `${nm ? `Perfecto, ${nm}. ` : ''}${ctx}${relax}\n${lines.join('\n')}\n\n¿Te interesa alguna o prefieres que un asesor confirme disponibilidad?`,
       followUpQuestion: null,
       awaitingField: state.collectedFields?.fullName ? 'advisor_contact_consent' : 'full_name',
       toneFlags: { consultive: true, inventoryOptions: true },
@@ -1303,6 +1309,25 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
       return composeRentDemandKickoff(state);
     }
     if (!state.collectedFields?.fullName) {
+      if (state.locationText && (state.propertyType || state.collectedFields?.propertyType) && state.budget == null) {
+        const typeLabel = state.propertyType || state.collectedFields?.propertyType;
+        const naturalType = /^(?:apartment|departamento|depa|depto)$/i.test(String(typeLabel))
+          ? 'un departamento'
+          : /^(?:house|casa|residencia)$/i.test(String(typeLabel))
+            ? 'una casa'
+            : /^(?:land|terreno|lote)$/i.test(String(typeLabel))
+              ? 'un terreno'
+              : `un ${String(typeLabel).toLowerCase()}`;
+        const locationReference = /^hospital\b/i.test(state.locationText)
+          ? `del ${state.locationText}`
+          : `de ${state.locationText}`;
+        return {
+          responseText: `Hola, con gusto te ayudo a buscar ${naturalType} en renta cerca ${locationReference}. ¿Me compartes tu nombre y el presupuesto mensual que tienes considerado?`,
+          followUpQuestion: null,
+          awaitingField: 'full_name',
+          toneFlags: { consultive: true, qualification: true },
+        };
+      }
       return composeSlotQuestion(state, 'full_name');
     }
     if (!state.locationText) {

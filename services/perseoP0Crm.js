@@ -127,10 +127,46 @@ function buildP0CrmPayload({
 
 async function commitP0CrmIntake(input) {
   if (!isEnabled()) return { handled: false, reason: 'p0_crm_disabled' };
-  const eligible = input.aiState?.crm_payload_ready === true && input.aiState?.meta_lead_form_flow === true;
-  if (!eligible) return { handled: false, reason: 'not_completed_form' };
+  const operation = normalizeOperation(input.aiState?.operation_type || input.parsedSignals?.operation_type);
+  const commercialFlow =
+    input.aiState?.meta_lead_form_flow === true ||
+    input.aiState?.lead_flow === 'demand' ||
+    input.aiState?.lead_flow === 'offer' ||
+    input.aiState?.lead_type === 'supply' ||
+    input.aiState?.property_specific_intent === true;
+  const eligible = !!input.conversationId && !!input.phone && !!operation && commercialFlow;
+  if (!eligible) return { handled: false, reason: 'commercial_intent_incomplete' };
 
-  const contract = buildP0CrmPayload(input);
+  let effectiveInput = input;
+  const hasAssignedAgent = !!(
+    input.conversationRow?.assigned_agent_profile_id ||
+    input.aiState?.assigned_agent_profile_id ||
+    input.property?.agent_profile_id ||
+    input.property?.raw?.agent_profile_id ||
+    input.aiState?.campaign_context?.campaign_agent_profile_id
+  );
+  if (!hasAssignedAgent) {
+    const { resolveEngineAssignmentReadOnly } = require('./assignmentDecision');
+    const assignment = await resolveEngineAssignmentReadOnly(
+      input.supabase,
+      {
+        operationType: operation,
+        propertyType: input.aiState?.property_type || null,
+        budgetMin: input.aiState?.budget_min ?? null,
+        budgetMax: input.aiState?.budget_max ?? null,
+      },
+      { previewMode: true, logger: input.logger || console },
+    );
+    if (!assignment.assignedAgentProfileId) {
+      return { handled: true, success: false, failClosed: true, reason: 'assignment_queue_unavailable' };
+    }
+    effectiveInput = {
+      ...input,
+      aiState: { ...input.aiState, assigned_agent_profile_id: assignment.assignedAgentProfileId },
+    };
+  }
+
+  const contract = buildP0CrmPayload(effectiveInput);
   if (!contract.ok) {
     return { handled: true, success: false, failClosed: true, reason: contract.reason };
   }

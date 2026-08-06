@@ -81,6 +81,19 @@ async function resolveInventoryOptionsForTurn({
   });
 
   const zone = slots.locationText;
+  const budgetMax = slots.budgetMax;
+  const bedrooms = slots.bedrooms;
+  const propertyType =
+    previousAiState.property_type ||
+    previousAiState.propertyType ||
+    previousAiState.collectedFields?.propertyType ||
+    previousAiState.collected_fields?.property_type ||
+    null;
+
+  // No hacer ni siquiera lecturas auxiliares de inventario antes de completar
+  // los criterios mínimos de demanda.
+  if (!zone || budgetMax == null || !propertyType) return null;
+
   let resolvedZone = zone;
   // LI light KG: expandir zona canónica antes del SQL (anti-inventar).
   if (zone && db) {
@@ -94,21 +107,6 @@ async function resolveInventoryOptionsForTurn({
       /* zone KG optional */
     }
   }
-  const budgetMax = slots.budgetMax;
-  const bedrooms = slots.bedrooms;
-
-  // Mínimo: operación + (zona o presupuesto o amenity/open search) para no disparar búsquedas vacías genéricas.
-  if (!resolvedZone && budgetMax == null) {
-    const asksOptions = /\b(?:opciones?|tienes|tienen|hay|muestrame|muéstrame|mostrar|comprar|busco)\b/i.test(
-      String(text || '')
-    );
-    const amenityOpen =
-      /\b(?:alberca|piscina|jardin|jard[ií]n|amueblad|garage|estacionamiento|roof|rooftop)\b/i.test(
-        String(text || '')
-      );
-    if (!asksOptions && !amenityOpen) return null;
-  }
-
   const res = await inventoryOptionsService.searchInventoryOptions(
     db,
     {
@@ -116,6 +114,7 @@ async function resolveInventoryOptionsForTurn({
       zone: resolvedZone,
       budgetMax,
       bedrooms,
+      propertyType,
       queryText: text,
       limit: 3,
     },

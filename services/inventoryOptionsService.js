@@ -157,9 +157,9 @@ async function searchInventoryOptions(db, criteria = {}, logger = console) {
     logger
   );
 
-  // Relajación de zona: si nada matchea con zona, reintentar sin zona (misma operación/presupuesto).
+  // La zona sólo puede ampliarse después de una aceptación explícita del cliente.
   let relaxedZone = false;
-  if (!rows.length && zone) {
+  if (!rows.length && zone && criteria.allowZoneExpansion === true) {
     rows = await structuredInventorySearch(
       db,
       { operation, budgetMax, bedrooms: criteria.bedrooms, limit: 12 },
