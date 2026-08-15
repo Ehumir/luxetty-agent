@@ -1,0 +1,35 @@
+name: PERSEO takeover guard
+
+on:
+  pull_request:
+    paths:
+      - "services/perseoAutomatedWhatsApp.js"
+      - "conversation/perseoGatekeeper.js"
+      - "test/perseoAutomatedWhatsAppTakeover.test.js"
+      - "test/perseoGatekeeper.test.js"
+      - "scripts/validate-graph-outbound.js"
+      - ".github/workflows/perseo-takeover-guard.yml"
+  push:
+    paths:
+      - "services/perseoAutomatedWhatsApp.js"
+      - "conversation/perseoGatekeeper.js"
+      - "test/perseoAutomatedWhatsAppTakeover.test.js"
+      - "test/perseoGatekeeper.test.js"
+      - "scripts/validate-graph-outbound.js"
+      - ".github/workflows/perseo-takeover-guard.yml"
+
+jobs:
+  takeover-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Validate single Graph outbound path
+        run: npm run validate:graph-outbound
+      - name: Gatekeeper and takeover tests
+        run: node --test test/perseoGatekeeper.test.js test/perseoAutomatedWhatsAppTakeover.test.js

@@ -7,20 +7,37 @@
  * No añadir `axios.post(.../messages)` en otros módulos de runtime; validar con:
  *   npm run validate:graph-outbound
  *
- * Los jobs de inactividad / smoke scripts inyectan su propio transporte y quedan fuera
- * de este contrato hasta un sprint dedicado.
+ * Sprint Modo Agente 2: antes de persistir/enviar un outbound IA, el wrapper vuelve a
+ * leer `conversations.ai_state` y recalcula la política. Esto cierra la carrera en la
+ * que un asesor toma la conversación después del gate inicial pero antes de Graph.
+ * Ante cualquier error de revalidación se aplica fail-closed.
+ *
+ * El cliente Supabase se carga de forma lazy para que importar este módulo no requiera
+ * secretos de producción. Runtime lo obtiene solo cuando hay un outbound IA; tests
+ * pueden inyectar `policyClient` sin inicializar conexiones externas.
  */
 
 const axios = require('axios');
 const { WHATSAPP_TOKEN, PHONE_NUMBER_ID, GRAPH_API_VERSION } = require('../config/env');
 const { normalizeOutboundMessages } = require('../utils/helpers');
-const { PERSEO_REASON_CODES } = require('../conversation/perseoGatekeeper');
+const {
+  PERSEO_REASON_CODES,
+  resolveAutomatedReplyPolicy,
+} = require('../conversation/perseoGatekeeper');
 
 const EVENT_AUTOMATION_BLOCKED = 'ai_auto_response_skipped_human_attention';
 
 function graphApiVersionPath() {
   const v = GRAPH_API_VERSION || 'v19.0';
   return v.startsWith('v') ? v : `v${v}`;
+}
+
+function getDefaultPolicyClient() {
+  try {
+    return require('./supabaseService').supabase;
+  } catch (_err) {
+    return null;
+  }
 }
 
 /** Único axios.post hacia Graph messages en el path webhook PERSEO. */
@@ -39,6 +56,55 @@ async function graphPostWhatsAppText(to, body) {
 }
 
 /**
+ * Revalida política contra el estado persistido inmediatamente antes del outbound IA.
+ * Si la conversación desaparece o falla la lectura, se bloquea (fail-closed).
+ */
+async function revalidateAutomatedReplyPolicy({ conversationId, to, initialPolicy, client }) {
+  const effectiveClient = client || getDefaultPolicyClient();
+  if (!conversationId || !effectiveClient) {
+    return {
+      policyResolution: 'error',
+      allowAutomatedReply: false,
+      allowQaBypass: Boolean(initialPolicy?.allowQaBypass),
+      effectiveHumanLock: true,
+      reason_code: PERSEO_REASON_CODES.POLICY_SETTINGS_READ_FAILED,
+    };
+  }
+
+  try {
+    const { data: conversationRow, error } = await effectiveClient
+      .from('conversations')
+      .select('id, ai_state')
+      .eq('id', conversationId)
+      .maybeSingle();
+
+    if (error || !conversationRow) {
+      return {
+        policyResolution: 'error',
+        allowAutomatedReply: false,
+        allowQaBypass: Boolean(initialPolicy?.allowQaBypass),
+        effectiveHumanLock: true,
+        reason_code: PERSEO_REASON_CODES.POLICY_SETTINGS_READ_FAILED,
+      };
+    }
+
+    return resolveAutomatedReplyPolicy({
+      supabase: effectiveClient,
+      conversationRow,
+      from: to,
+    });
+  } catch (_err) {
+    return {
+      policyResolution: 'error',
+      allowAutomatedReply: false,
+      allowQaBypass: Boolean(initialPolicy?.allowQaBypass),
+      effectiveHumanLock: true,
+      reason_code: PERSEO_REASON_CODES.POLICY_RESOLUTION_UNEXPECTED,
+    };
+  }
+}
+
+/**
  * @param {object} args
  * @param {'ia'|'qa'} args.channel
  * @param {string} args.to
@@ -49,6 +115,7 @@ async function graphPostWhatsAppText(to, body) {
  * @param {function} args.saveOutboundMessages — misma firma que en index.js
  * @param {function} [args.saveConversationEvent]
  * @param {function} [args.logEvent]
+ * @param {object} [args.policyClient] — inyección solo para tests; runtime usa Supabase service client lazy.
  */
 async function sendPerseoAutomatedWhatsApp({
   channel,
@@ -61,6 +128,7 @@ async function sendPerseoAutomatedWhatsApp({
   saveConversationEvent,
   logEvent,
   argosMode = false,
+  policyClient,
 }) {
   if (argosMode === true || rawPayload?.argosMode === true || policy?.argosMode === true) {
     const err = new Error('ARGOS_WHATSAPP_BLOCKED');
@@ -80,24 +148,35 @@ async function sendPerseoAutomatedWhatsApp({
     return { sent: false, reason_code: PERSEO_REASON_CODES.OUTBOUND_MESSAGES_EMPTY };
   }
 
-  if (channel === 'ia' && !policy.allowAutomatedReply) {
+  let effectivePolicy = policy;
+  if (channel === 'ia') {
+    effectivePolicy = await revalidateAutomatedReplyPolicy({
+      conversationId,
+      to,
+      initialPolicy: policy,
+      client: policyClient,
+    });
+  }
+
+  if (channel === 'ia' && !effectivePolicy.allowAutomatedReply) {
     if (typeof logEvent === 'function') {
       logEvent('perseo_automation_blocked', {
         conversation_id: conversationId,
-        reason_code: policy.reason_code,
-        policy_resolution: policy.policyResolution,
+        reason_code: effectivePolicy.reason_code,
+        policy_resolution: effectivePolicy.policyResolution,
         channel: 'ia',
+        revalidated_before_graph: true,
       });
     }
     if (typeof saveConversationEvent === 'function') {
       await saveConversationEvent(conversationId, EVENT_AUTOMATION_BLOCKED, {
-        reason_code: policy.reason_code,
-        policy_resolution: policy.policyResolution,
+        reason_code: effectivePolicy.reason_code,
+        policy_resolution: effectivePolicy.policyResolution,
         channel: 'ia',
-        via: 'outbound_wrapper',
+        via: 'outbound_wrapper_revalidation',
       });
     }
-    return { sent: false, reason_code: policy.reason_code };
+    return { sent: false, reason_code: effectivePolicy.reason_code };
   }
 
   if (channel === 'qa' && !policy.allowQaBypass) {
@@ -126,6 +205,7 @@ async function sendPerseoAutomatedWhatsApp({
       conversation_id: conversationId,
       channel,
       fragments: outbound.length,
+      policy_revalidated_before_graph: channel === 'ia',
     });
   }
 
@@ -138,6 +218,7 @@ async function sendPerseoAutomatedWhatsApp({
       conversation_id: conversationId,
       channel,
       fragments: outbound.length,
+      policy_revalidated_before_graph: channel === 'ia',
     });
   }
 
@@ -151,4 +232,6 @@ async function sendPerseoAutomatedWhatsApp({
 module.exports = {
   sendPerseoAutomatedWhatsApp,
   graphPostWhatsAppText,
+  revalidateAutomatedReplyPolicy,
+  getDefaultPolicyClient,
 };
