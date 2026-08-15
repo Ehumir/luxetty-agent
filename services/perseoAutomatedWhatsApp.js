@@ -12,8 +12,9 @@
  * que un asesor toma la conversación después del gate inicial pero antes de Graph.
  * Ante cualquier error de revalidación se aplica fail-closed.
  *
- * Los jobs de inactividad / smoke scripts inyectan su propio transporte y quedan fuera
- * de este contrato hasta un sprint dedicado.
+ * El cliente Supabase se carga de forma lazy para que importar este módulo no requiera
+ * secretos de producción. Runtime lo obtiene solo cuando hay un outbound IA; tests
+ * pueden inyectar `policyClient` sin inicializar conexiones externas.
  */
 
 const axios = require('axios');
@@ -23,13 +24,20 @@ const {
   PERSEO_REASON_CODES,
   resolveAutomatedReplyPolicy,
 } = require('../conversation/perseoGatekeeper');
-const { supabase } = require('./supabaseService');
 
 const EVENT_AUTOMATION_BLOCKED = 'ai_auto_response_skipped_human_attention';
 
 function graphApiVersionPath() {
   const v = GRAPH_API_VERSION || 'v19.0';
   return v.startsWith('v') ? v : `v${v}`;
+}
+
+function getDefaultPolicyClient() {
+  try {
+    return require('./supabaseService').supabase;
+  } catch (_err) {
+    return null;
+  }
 }
 
 /** Único axios.post hacia Graph messages en el path webhook PERSEO. */
@@ -51,8 +59,9 @@ async function graphPostWhatsAppText(to, body) {
  * Revalida política contra el estado persistido inmediatamente antes del outbound IA.
  * Si la conversación desaparece o falla la lectura, se bloquea (fail-closed).
  */
-async function revalidateAutomatedReplyPolicy({ conversationId, to, initialPolicy, client = supabase }) {
-  if (!conversationId || !client) {
+async function revalidateAutomatedReplyPolicy({ conversationId, to, initialPolicy, client }) {
+  const effectiveClient = client || getDefaultPolicyClient();
+  if (!conversationId || !effectiveClient) {
     return {
       policyResolution: 'error',
       allowAutomatedReply: false,
@@ -63,7 +72,7 @@ async function revalidateAutomatedReplyPolicy({ conversationId, to, initialPolic
   }
 
   try {
-    const { data: conversationRow, error } = await client
+    const { data: conversationRow, error } = await effectiveClient
       .from('conversations')
       .select('id, ai_state')
       .eq('id', conversationId)
@@ -80,7 +89,7 @@ async function revalidateAutomatedReplyPolicy({ conversationId, to, initialPolic
     }
 
     return resolveAutomatedReplyPolicy({
-      supabase: client,
+      supabase: effectiveClient,
       conversationRow,
       from: to,
     });
@@ -106,7 +115,7 @@ async function revalidateAutomatedReplyPolicy({ conversationId, to, initialPolic
  * @param {function} args.saveOutboundMessages — misma firma que en index.js
  * @param {function} [args.saveConversationEvent]
  * @param {function} [args.logEvent]
- * @param {object} [args.policyClient] — inyección solo para tests; runtime usa Supabase service client.
+ * @param {object} [args.policyClient] — inyección solo para tests; runtime usa Supabase service client lazy.
  */
 async function sendPerseoAutomatedWhatsApp({
   channel,
@@ -145,7 +154,7 @@ async function sendPerseoAutomatedWhatsApp({
       conversationId,
       to,
       initialPolicy: policy,
-      client: policyClient || supabase,
+      client: policyClient,
     });
   }
 
@@ -224,4 +233,5 @@ module.exports = {
   sendPerseoAutomatedWhatsApp,
   graphPostWhatsAppText,
   revalidateAutomatedReplyPolicy,
+  getDefaultPolicyClient,
 };
