@@ -8,6 +8,7 @@ const {
   classifyIcfFollowupReply,
   humanLockFromAiState,
   isWithinCustomerServiceWindow,
+  runIcfDailyFollowups,
 } = require('../services/icfDailyFollowup');
 const {
   sendPerseoAutomatedWhatsApp,
@@ -32,7 +33,7 @@ function fakePolicyClient(aiState = {}) {
 function outboundSaver() {
   return async ({ messages }) => ({
     outbound: messages,
-    rows: [{ id: 'msg-1', metadata: {} }],
+    rows: [{ id: 'msg-1', metadata: { delivery_status: 'pending_send' } }],
   });
 }
 
@@ -73,10 +74,77 @@ describe('ICF follow-up safety helpers', () => {
     assert.equal(isWithinCustomerServiceWindow('2026-08-15T00:00:00.000Z', now), false);
     assert.equal(isWithinCustomerServiceWindow(null, now), false);
   });
+
+  it('keeps dry-run read-only even when a conversation would need materialization', async () => {
+    const touchedTables = [];
+    const settingsChain = {
+      select() { return this; },
+      eq() { return this; },
+      async maybeSingle() {
+        return {
+          data: {
+            enabled: false,
+            cadence_hours: 24,
+            batch_limit: 50,
+            template_name: 'approved_template_for_test',
+            template_language: 'es_MX',
+            free_text_body: 'Confirma tu solicitud',
+          },
+          error: null,
+        };
+      },
+    };
+    const fakeSupabase = {
+      from(table) {
+        touchedTables.push(table);
+        if (table !== 'perseo_icf_followup_settings') {
+          throw new Error(`dry-run attempted unexpected table access: ${table}`);
+        }
+        return settingsChain;
+      },
+      async rpc(name) {
+        assert.equal(name, 'perseo_icf_daily_followup_candidates');
+        return {
+          data: [{
+            validation_id: 'val-1',
+            lead_id: 'lead-1',
+            folio_code: 'SOL-TEST',
+            contact_id: 'contact-1',
+            contact_name: 'Prueba',
+            whatsapp: '5218100000001',
+            assigned_agent_profile_id: 'agent-1',
+            conversation_id: null,
+            conversation_ai_state: {},
+            last_customer_message_at: null,
+            followup_count: 0,
+          }],
+          error: null,
+        };
+      },
+    };
+
+    const previousFlag = process.env.PERSEO_POLICY_V2_ENABLED;
+    process.env.PERSEO_POLICY_V2_ENABLED = 'false';
+    try {
+      const result = await runIcfDailyFollowups({
+        supabase: fakeSupabase,
+        dryRun: true,
+        ignoreEnabled: true,
+        now: new Date('2026-08-16T00:00:00.000Z'),
+      });
+      assert.equal(result.dry_run, true);
+      assert.equal(result.decisions[0].action, 'would_send');
+      assert.equal(result.decisions[0].would_materialize_conversation, true);
+      assert.deepEqual(touchedTables, ['perseo_icf_followup_settings']);
+    } finally {
+      if (previousFlag == null) delete process.env.PERSEO_POLICY_V2_ENABLED;
+      else process.env.PERSEO_POLICY_V2_ENABLED = previousFlag;
+    }
+  });
 });
 
 describe('Automated WhatsApp Graph contract', () => {
-  it('requires wamid for text success', async () => {
+  it('requires wamid for text success and exposes persisted rows for failure finalization', async () => {
     const original = axios.post;
     axios.post = async () => ({ data: { messages: [] } });
     try {
@@ -92,7 +160,13 @@ describe('Automated WhatsApp Graph contract', () => {
           saveConversationEvent: async () => {},
           logEvent: () => {},
         }),
-        (err) => err?.code === 'WHATSAPP_GRAPH_MISSING_WAMID',
+        (err) => {
+          assert.equal(err?.code, 'WHATSAPP_GRAPH_MISSING_WAMID');
+          assert.equal(err?.graphAttempted, true);
+          assert.equal(err?.deliveryKind, 'text');
+          assert.equal(err?.persistedRows?.[0]?.id, 'msg-1');
+          return true;
+        },
       );
     } finally {
       axios.post = original;
