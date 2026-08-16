@@ -4,17 +4,29 @@ on:
   pull_request:
     paths:
       - "services/perseoAutomatedWhatsApp.js"
+      - "services/icfDailyFollowup.js"
+      - "services/icfInboundInterlock.js"
+      - "services/saveConversationMessage.js"
       - "conversation/perseoGatekeeper.js"
+      - "workers/crmOutboxRailwayWorker.js"
+      - "routes/internalJobsRouter.js"
       - "test/perseoAutomatedWhatsAppTakeover.test.js"
       - "test/perseoGatekeeper.test.js"
+      - "test/icfDailyFollowup.test.js"
       - "scripts/validate-graph-outbound.js"
       - ".github/workflows/perseo-takeover-guard.yml"
   push:
     paths:
       - "services/perseoAutomatedWhatsApp.js"
+      - "services/icfDailyFollowup.js"
+      - "services/icfInboundInterlock.js"
+      - "services/saveConversationMessage.js"
       - "conversation/perseoGatekeeper.js"
+      - "workers/crmOutboxRailwayWorker.js"
+      - "routes/internalJobsRouter.js"
       - "test/perseoAutomatedWhatsAppTakeover.test.js"
       - "test/perseoGatekeeper.test.js"
+      - "test/icfDailyFollowup.test.js"
       - "scripts/validate-graph-outbound.js"
       - ".github/workflows/perseo-takeover-guard.yml"
 
@@ -31,5 +43,5 @@ jobs:
       - run: npm ci
       - name: Validate single Graph outbound path
         run: npm run validate:graph-outbound
-      - name: Gatekeeper and takeover tests
-        run: node --test test/perseoGatekeeper.test.js test/perseoAutomatedWhatsAppTakeover.test.js
+      - name: Gatekeeper, takeover and ICF follow-up tests
+        run: node --test test/perseoGatekeeper.test.js test/perseoAutomatedWhatsAppTakeover.test.js test/icfDailyFollowup.test.js
