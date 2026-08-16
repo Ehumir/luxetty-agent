@@ -5,6 +5,7 @@ const { supabase } = require('../services/supabaseService');
 const { sendPerseoAutomatedWhatsApp } = require('../services/perseoAutomatedWhatsApp');
 const { saveOutboundMessages } = require('../services/saveOutboundMessages');
 const { runInactivityFollowups } = require('../services/followupAutomation');
+const { runIcfDailyFollowups } = require('../services/icfDailyFollowup');
 const router = express.Router();
 
 function isFollowupsJobEnabled() {
@@ -78,14 +79,40 @@ router.post('/inactivity-followups', async (req, res) => {
     };
 
     console.info('FOLLOWUP_JOB_SUMMARY', payload);
-
     return res.json({ ok: true, summary: payload });
   } catch (err) {
     console.error('FOLLOWUP_JOB_FATAL', err);
-    return res.status(500).json({
-      ok: false,
-      error: err?.message || String(err),
+    return res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// Sprint 3 — same cron-secret middleware as the existing internal jobs router.
+// dry_run=true may inspect candidates even while the DB setting remains disabled.
+router.post('/icf-daily-followups', async (req, res) => {
+  const startedAt = Date.now();
+  try {
+    const dryRun = req.body?.dry_run !== false;
+    const ignoreEnabled = dryRun && req.body?.ignore_enabled !== false;
+    const limit = Number(req.body?.limit || 50);
+
+    const summary = await runIcfDailyFollowups({
+      supabase,
+      dryRun,
+      ignoreEnabled,
+      limit: Number.isFinite(limit) ? limit : 50,
+      logger: console,
     });
+
+    const payload = {
+      ...summary,
+      duration_ms: Date.now() - startedAt,
+      source: 'icf_daily_followup_job',
+    };
+    console.info('ICF_DAILY_FOLLOWUP_JOB_SUMMARY', payload);
+    return res.json({ ok: summary?.ok !== false, summary: payload });
+  } catch (err) {
+    console.error('ICF_DAILY_FOLLOWUP_JOB_FATAL', err);
+    return res.status(500).json({ ok: false, error: err?.message || String(err) });
   }
 });
 

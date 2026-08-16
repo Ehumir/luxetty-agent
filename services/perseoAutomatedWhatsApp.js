@@ -1,20 +1,13 @@
 'use strict';
 
 /**
- * Sprint 2 — Wrapper outbound obligatorio (WhatsApp Graph /messages).
+ * Wrapper outbound único de PERSEO hacia WhatsApp Graph /messages.
  *
- * Toda respuesta automatizada del webhook PERSEO debe salir por `sendPerseoAutomatedWhatsApp`.
- * No añadir `axios.post(.../messages)` en otros módulos de runtime; validar con:
- *   npm run validate:graph-outbound
- *
- * Sprint Modo Agente 2: antes de persistir/enviar un outbound IA, el wrapper vuelve a
- * leer `conversations.ai_state` y recalcula la política. Esto cierra la carrera en la
- * que un asesor toma la conversación después del gate inicial pero antes de Graph.
- * Ante cualquier error de revalidación se aplica fail-closed.
- *
- * El cliente Supabase se carga de forma lazy para que importar este módulo no requiera
- * secretos de producción. Runtime lo obtiene solo cuando hay un outbound IA; tests
- * pueden inyectar `policyClient` sin inicializar conexiones externas.
+ * Toda respuesta automatizada (texto o template) debe pasar por este módulo para:
+ * - revalidar takeover humano inmediatamente antes de Graph;
+ * - mantener fail-closed ante errores de policy;
+ * - persistir el outbound en el hilo ATENA;
+ * - exigir wamid real antes de considerar un envío exitoso.
  */
 
 const axios = require('axios');
@@ -40,12 +33,12 @@ function getDefaultPolicyClient() {
   }
 }
 
-/** Único axios.post hacia Graph messages en el path webhook PERSEO. */
-async function graphPostWhatsAppText(to, body) {
+/** Único axios.post hacia Graph messages en runtime PERSEO. */
+async function graphPostWhatsAppPayload(to, payload) {
   const version = graphApiVersionPath();
   return axios.post(
     `https://graph.facebook.com/${version}/${PHONE_NUMBER_ID}/messages`,
-    { messaging_product: 'whatsapp', to, type: 'text', text: { body } },
+    { messaging_product: 'whatsapp', to, ...payload },
     {
       headers: {
         Authorization: `Bearer ${WHATSAPP_TOKEN}`,
@@ -53,6 +46,45 @@ async function graphPostWhatsAppText(to, body) {
       },
     }
   );
+}
+
+async function graphPostWhatsAppText(to, body) {
+  return graphPostWhatsAppPayload(to, { type: 'text', text: { body } });
+}
+
+async function graphPostWhatsAppTemplate(to, { name, language = 'es_MX', components = [] } = {}) {
+  if (!name || !String(name).trim()) {
+    const err = new Error('WHATSAPP_TEMPLATE_NAME_REQUIRED');
+    err.code = 'WHATSAPP_TEMPLATE_NAME_REQUIRED';
+    throw err;
+  }
+  return graphPostWhatsAppPayload(to, {
+    type: 'template',
+    template: {
+      name: String(name).trim(),
+      language: { code: String(language || 'es_MX').trim() || 'es_MX' },
+      ...(Array.isArray(components) && components.length ? { components } : {}),
+    },
+  });
+}
+
+function extractGraphWamids(response) {
+  const messages = response?.data?.messages;
+  if (!Array.isArray(messages)) return [];
+  return messages
+    .map((m) => (m?.id == null ? '' : String(m.id).trim()))
+    .filter(Boolean);
+}
+
+function requireGraphWamid(response) {
+  const wamids = extractGraphWamids(response);
+  if (!wamids.length) {
+    const err = new Error('WHATSAPP_GRAPH_MISSING_WAMID');
+    err.code = 'WHATSAPP_GRAPH_MISSING_WAMID';
+    err.graph_response = response?.data ?? null;
+    throw err;
+  }
+  return wamids;
 }
 
 /**
@@ -104,50 +136,15 @@ async function revalidateAutomatedReplyPolicy({ conversationId, to, initialPolic
   }
 }
 
-/**
- * @param {object} args
- * @param {'ia'|'qa'} args.channel
- * @param {string} args.to
- * @param {string|string[]|null|undefined} args.messages
- * @param {string|null} args.conversationId
- * @param {object} [args.rawPayload]
- * @param {import('../conversation/perseoGatekeeper').AutomatedReplyPolicy} args.policy
- * @param {function} args.saveOutboundMessages — misma firma que en index.js
- * @param {function} [args.saveConversationEvent]
- * @param {function} [args.logEvent]
- * @param {object} [args.policyClient] — inyección solo para tests; runtime usa Supabase service client lazy.
- */
-async function sendPerseoAutomatedWhatsApp({
+async function resolveOutboundPolicy({
   channel,
   to,
-  messages,
   conversationId,
-  rawPayload = {},
   policy,
-  saveOutboundMessages,
+  policyClient,
   saveConversationEvent,
   logEvent,
-  argosMode = false,
-  policyClient,
 }) {
-  if (argosMode === true || rawPayload?.argosMode === true || policy?.argosMode === true) {
-    const err = new Error('ARGOS_WHATSAPP_BLOCKED');
-    err.code = 'ARGOS_WHATSAPP_BLOCKED';
-    if (typeof logEvent === 'function') {
-      logEvent('argos_whatsapp_blocked', {
-        conversation_id: conversationId,
-        channel,
-        reason: 'argos_mode',
-      });
-    }
-    throw err;
-  }
-
-  const outbound = normalizeOutboundMessages(messages);
-  if (!outbound.length) {
-    return { sent: false, reason_code: PERSEO_REASON_CODES.OUTBOUND_MESSAGES_EMPTY };
-  }
-
   let effectivePolicy = policy;
   if (channel === 'ia') {
     effectivePolicy = await revalidateAutomatedReplyPolicy({
@@ -176,10 +173,10 @@ async function sendPerseoAutomatedWhatsApp({
         via: 'outbound_wrapper_revalidation',
       });
     }
-    return { sent: false, reason_code: effectivePolicy.reason_code };
+    return { allowed: false, policy: effectivePolicy };
   }
 
-  if (channel === 'qa' && !policy.allowQaBypass) {
+  if (channel === 'qa' && !policy?.allowQaBypass) {
     if (typeof logEvent === 'function') {
       logEvent('perseo_qa_outbound_denied', {
         conversation_id: conversationId,
@@ -191,7 +188,64 @@ async function sendPerseoAutomatedWhatsApp({
         conversation_id: conversationId,
       });
     }
-    return { sent: false, reason_code: PERSEO_REASON_CODES.QA_OUTBOUND_NOT_ALLOWLISTED };
+    return {
+      allowed: false,
+      policy: { reason_code: PERSEO_REASON_CODES.QA_OUTBOUND_NOT_ALLOWLISTED },
+    };
+  }
+
+  return { allowed: true, policy: effectivePolicy };
+}
+
+function assertNotArgos({ argosMode, rawPayload, policy, conversationId, channel, logEvent }) {
+  if (argosMode === true || rawPayload?.argosMode === true || policy?.argosMode === true) {
+    const err = new Error('ARGOS_WHATSAPP_BLOCKED');
+    err.code = 'ARGOS_WHATSAPP_BLOCKED';
+    if (typeof logEvent === 'function') {
+      logEvent('argos_whatsapp_blocked', {
+        conversation_id: conversationId,
+        channel,
+        reason: 'argos_mode',
+      });
+    }
+    throw err;
+  }
+}
+
+/**
+ * Envío automatizado de texto libre. Conserva el contrato histórico y ahora devuelve wamid(s).
+ */
+async function sendPerseoAutomatedWhatsApp({
+  channel,
+  to,
+  messages,
+  conversationId,
+  rawPayload = {},
+  policy,
+  saveOutboundMessages,
+  saveConversationEvent,
+  logEvent,
+  argosMode = false,
+  policyClient,
+}) {
+  assertNotArgos({ argosMode, rawPayload, policy, conversationId, channel, logEvent });
+
+  const outbound = normalizeOutboundMessages(messages);
+  if (!outbound.length) {
+    return { sent: false, reason_code: PERSEO_REASON_CODES.OUTBOUND_MESSAGES_EMPTY };
+  }
+
+  const gate = await resolveOutboundPolicy({
+    channel,
+    to,
+    conversationId,
+    policy,
+    policyClient,
+    saveConversationEvent,
+    logEvent,
+  });
+  if (!gate.allowed) {
+    return { sent: false, reason_code: gate.policy?.reason_code };
   }
 
   const persisted = await saveOutboundMessages({
@@ -209,8 +263,10 @@ async function sendPerseoAutomatedWhatsApp({
     });
   }
 
+  const wamids = [];
   for (const body of outbound) {
-    await graphPostWhatsAppText(to, body);
+    const response = await graphPostWhatsAppText(to, body);
+    wamids.push(...requireGraphWamid(response));
   }
 
   if (typeof logEvent === 'function') {
@@ -218,20 +274,105 @@ async function sendPerseoAutomatedWhatsApp({
       conversation_id: conversationId,
       channel,
       fragments: outbound.length,
+      wamids_count: wamids.length,
       policy_revalidated_before_graph: channel === 'ia',
     });
   }
 
   return {
     sent: true,
+    wamid: wamids[0] || null,
+    wamids,
     outbound: persisted?.outbound ?? outbound,
+    rows: persisted?.rows ?? [],
+  };
+}
+
+/**
+ * Envío automatizado mediante template aprobado de WhatsApp.
+ * El texto de display se persiste en ATENA para que el hilo siga siendo legible.
+ */
+async function sendPerseoAutomatedWhatsAppTemplate({
+  channel = 'ia',
+  to,
+  conversationId,
+  templateName,
+  templateLanguage = 'es_MX',
+  templateComponents = [],
+  displayText,
+  rawPayload = {},
+  policy,
+  saveOutboundMessages,
+  saveConversationEvent,
+  logEvent,
+  argosMode = false,
+  policyClient,
+}) {
+  assertNotArgos({ argosMode, rawPayload, policy, conversationId, channel, logEvent });
+
+  if (!templateName || !String(templateName).trim()) {
+    return { sent: false, reason_code: 'whatsapp_template_not_configured' };
+  }
+  const persistedText = String(displayText || '').trim() || `[Plantilla WhatsApp: ${String(templateName).trim()}]`;
+
+  const gate = await resolveOutboundPolicy({
+    channel,
+    to,
+    conversationId,
+    policy,
+    policyClient,
+    saveConversationEvent,
+    logEvent,
+  });
+  if (!gate.allowed) {
+    return { sent: false, reason_code: gate.policy?.reason_code };
+  }
+
+  const persisted = await saveOutboundMessages({
+    conversationId,
+    messages: [persistedText],
+    rawPayload: {
+      ...rawPayload,
+      whatsapp_message_type: 'template',
+      whatsapp_template_name: String(templateName).trim(),
+      whatsapp_template_language: templateLanguage,
+    },
+  });
+
+  const response = await graphPostWhatsAppTemplate(to, {
+    name: templateName,
+    language: templateLanguage,
+    components: templateComponents,
+  });
+  const wamids = requireGraphWamid(response);
+
+  if (typeof logEvent === 'function') {
+    logEvent('perseo_template_outbound_sent', {
+      conversation_id: conversationId,
+      channel,
+      template_name: String(templateName).trim(),
+      wamids_count: wamids.length,
+      policy_revalidated_before_graph: channel === 'ia',
+    });
+  }
+
+  return {
+    sent: true,
+    wamid: wamids[0] || null,
+    wamids,
+    outbound: persisted?.outbound ?? [persistedText],
     rows: persisted?.rows ?? [],
   };
 }
 
 module.exports = {
   sendPerseoAutomatedWhatsApp,
+  sendPerseoAutomatedWhatsAppTemplate,
   graphPostWhatsAppText,
+  graphPostWhatsAppTemplate,
+  graphPostWhatsAppPayload,
+  extractGraphWamids,
+  requireGraphWamid,
   revalidateAutomatedReplyPolicy,
   getDefaultPolicyClient,
 };
