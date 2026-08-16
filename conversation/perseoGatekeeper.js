@@ -1,21 +1,15 @@
 'use strict';
 
 /**
- * Sprint 2 — Gatekeeper único PERSEO (ATENA/PERSEO arquitectura v2).
- *
- * Centraliza decisión IA vs bloqueo automatizado. Sin caché: lectura SQL directa
- * de `public.ai_conversation_channel_settings` cuando PERSEO_POLICY_V2_ENABLED=true.
- *
- * Alineado con `luxetty-atena/supabase/functions/_shared/perseo-ai-control.ts`
- * para normalización de `conversations.ai_state`.
+ * Gatekeeper único PERSEO.
+ * Centraliza decisión IA vs bloqueo automatizado y respeta takeover persistido.
  */
 
 const { isSprint1QaTesterPhone } = require('./qaSprint1Commands');
+const { isIcfInboundHandled } = require('../services/icfInboundInterlock');
 
-/** Códigos estables para logs, eventos y métricas (no usar strings libres). */
 const PERSEO_REASON_CODES = Object.freeze({
   AUTOMATION_ALLOWED: 'AUTOMATION_ALLOWED',
-  /** Flag V2 apagado: no se lee tabla global; solo control por conversación. */
   LEGACY_POLICY_V2_DISABLED: 'LEGACY_POLICY_V2_DISABLED',
   CONVERSATION_HUMAN_ATTENTION: 'CONVERSATION_HUMAN_ATTENTION',
   HUMAN_ONLY_GLOBAL_ACTIVE: 'HUMAN_ONLY_GLOBAL_ACTIVE',
@@ -26,16 +20,13 @@ const PERSEO_REASON_CODES = Object.freeze({
   POLICY_RESOLUTION_UNEXPECTED: 'POLICY_RESOLUTION_UNEXPECTED',
   QA_OUTBOUND_NOT_ALLOWLISTED: 'QA_OUTBOUND_NOT_ALLOWLISTED',
   OUTBOUND_MESSAGES_EMPTY: 'OUTBOUND_MESSAGES_EMPTY',
+  ICF_FOLLOWUP_RESPONSE_HANDLED: 'ICF_FOLLOWUP_RESPONSE_HANDLED',
 });
 
 function isRecord(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-/**
- * @param {object|null} conversationRow
- * @returns {{ attention_mode: 'perseo' | 'human', ai_paused: boolean, source: 'persisted' | 'default' }}
- */
 function normalizePerseoAiControlFromRow(conversationRow) {
   const aiState = conversationRow?.ai_state;
   if (!isRecord(aiState)) {
@@ -70,7 +61,6 @@ function isPerseoPolicyV2Enabled() {
   return process.env.PERSEO_POLICY_V2_ENABLED === 'true';
 }
 
-/** Logs JSON en una línea; activar solo en diagnóstico (P0). No loguear teléfonos completos. */
 function maybeLogPolicyDebug(globalRow, policy) {
   if (process.env.PERSEO_POLICY_DEBUG_LOG !== 'true') return;
   console.info(
@@ -80,8 +70,7 @@ function maybeLogPolicyDebug(globalRow, policy) {
       perseo_policy_v2_enabled: isPerseoPolicyV2Enabled(),
       reads_ai_conversation_channel_settings: isPerseoPolicyV2Enabled(),
       human_only_global: globalRow && typeof globalRow.human_only_global === 'boolean' ? globalRow.human_only_global : null,
-      automation_enabled:
-        globalRow && typeof globalRow.automation_enabled === 'boolean' ? globalRow.automation_enabled : null,
+      automation_enabled: globalRow && typeof globalRow.automation_enabled === 'boolean' ? globalRow.automation_enabled : null,
       policyResolution: policy.policyResolution,
       allowAutomatedReply: policy.allowAutomatedReply,
       allowQaBypass: policy.allowQaBypass,
@@ -91,10 +80,6 @@ function maybeLogPolicyDebug(globalRow, policy) {
   );
 }
 
-/**
- * Lectura directa singleton id=true (sin caché en Sprint 2).
- * @param {import('@supabase/supabase-js').SupabaseClient} supabase
- */
 async function fetchAiConversationChannelSettingsRow(supabase) {
   try {
     if (!supabase) {
@@ -130,29 +115,22 @@ async function fetchAiConversationChannelSettingsRow(supabase) {
   }
 }
 
-/**
- * @typedef {'ok'|'error'} PolicyResolution
- * @typedef {object} AutomatedReplyPolicy
- * @property {PolicyResolution} policyResolution
- * @property {boolean} allowAutomatedReply
- * @property {boolean} allowQaBypass  — solo allowlist QA (nunca bypass global).
- * @property {boolean} effectiveHumanLock
- * @property {string} reason_code — una de PERSEO_REASON_CODES
- */
-
-/**
- * Resolución única de política outbound IA / QA allowlist.
- *
- * @param {object} args
- * @param {import('@supabase/supabase-js').SupabaseClient|null} args.supabase
- * @param {object|null} args.conversationRow
- * @param {string} args.from — teléfono WhatsApp normalizado
- * @returns {Promise<AutomatedReplyPolicy>}
- */
 async function resolveAutomatedReplyPolicy({ supabase, conversationRow, from }) {
   const allowQaBypass = isSprint1QaTesterPhone(from);
 
   try {
+    if (conversationRow?.id && isIcfInboundHandled(conversationRow.id)) {
+      const out = {
+        policyResolution: 'ok',
+        allowAutomatedReply: false,
+        allowQaBypass,
+        effectiveHumanLock: true,
+        reason_code: PERSEO_REASON_CODES.ICF_FOLLOWUP_RESPONSE_HANDLED,
+      };
+      maybeLogPolicyDebug(null, out);
+      return out;
+    }
+
     const conv = normalizePerseoAiControlFromRow(conversationRow);
     const conversationHumanLock = conv.attention_mode === 'human' || conv.ai_paused === true;
 
