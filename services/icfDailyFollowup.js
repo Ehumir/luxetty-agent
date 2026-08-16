@@ -1,5 +1,6 @@
 'use strict';
 
+const { randomUUID } = require('crypto');
 const { getDefaultAiState } = require('../conversation/aiState');
 const { normalizePhoneNumber, buildPhoneLookupValues, normalizeOutboundMessages } = require('../utils/helpers');
 const { saveConversationMessage } = require('./saveConversationMessage');
@@ -287,6 +288,10 @@ function buildPersistenceAdapter(supabase) {
   return async function saveOutboundMessages({ conversationId, messages, rawPayload = {} }) {
     const outbound = normalizeOutboundMessages(messages);
     const rows = [];
+    const perseoMetadata = rawPayload?.perseo_metadata && typeof rawPayload.perseo_metadata === 'object'
+      ? rawPayload.perseo_metadata
+      : {};
+
     for (const messageText of outbound) {
       const row = await saveConversationMessage(supabase, {
         conversationId,
@@ -295,8 +300,19 @@ function buildPersistenceAdapter(supabase) {
         messageType: 'text',
         messageText,
         rawPayload,
+        metadata: {
+          delivery_status: 'pending_send',
+          automation: FOLLOWUP_KIND,
+          lead_id: perseoMetadata.lead_id || null,
+          attempt_id: perseoMetadata.attempt_id || null,
+        },
       });
-      if (row?.id) rows.push(row);
+      if (!row?.id) {
+        const err = new Error('OUTBOUND_PERSIST_FAILED');
+        err.code = 'OUTBOUND_PERSIST_FAILED';
+        throw err;
+      }
+      rows.push(row);
     }
     return { outbound, rows };
   };
@@ -311,10 +327,30 @@ async function attachWamidToPersistedRows(supabase, rows, wamid, metadata = {}) 
       .from('conversation_messages')
       .update({
         meta_message_id: wamid,
-        metadata: { ...previousMetadata, ...metadata, wamid },
+        metadata: { ...previousMetadata, ...metadata, delivery_status: 'sent', wamid },
       })
       .eq('id', row.id)
       .is('meta_message_id', null);
+  }
+}
+
+async function markPersistedRowsFailed(supabase, rows, errorText, metadata = {}) {
+  if (!Array.isArray(rows) || !rows.length) return;
+  const safeError = String(errorText || 'graph_failure').slice(0, 1000);
+  for (const row of rows) {
+    if (!row?.id) continue;
+    const previousMetadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    await supabase
+      .from('conversation_messages')
+      .update({
+        metadata: {
+          ...previousMetadata,
+          ...metadata,
+          delivery_status: 'failed',
+          delivery_error: safeError,
+        },
+      })
+      .eq('id', row.id);
   }
 }
 
@@ -325,6 +361,37 @@ async function listCandidates(supabase, now, limit) {
   });
   if (error) throw error;
   return Array.isArray(data) ? data : [];
+}
+
+async function claimFollowup(supabase, leadId, conversationId, attemptId) {
+  const { data, error } = await supabase.rpc('perseo_icf_claim_followup', {
+    p_lead_id: leadId,
+    p_conversation_id: conversationId,
+    p_attempt_id: attemptId,
+  });
+  if (error) throw error;
+  return data || { claimed: false, reason: 'claim_failed' };
+}
+
+async function unclaimFollowup(supabase, leadId, attemptId, reason) {
+  if (!attemptId) return;
+  const { error } = await supabase.rpc('perseo_icf_unclaim_followup', {
+    p_lead_id: leadId,
+    p_attempt_id: attemptId,
+    p_reason: String(reason || 'pre_graph_blocked').slice(0, 1000),
+  });
+  if (error) throw error;
+}
+
+async function recordGraphFailure(supabase, { leadId, conversationId, attemptId, error, deliveryKind }) {
+  const { error: rpcError } = await supabase.rpc('perseo_icf_record_followup_failed', {
+    p_lead_id: leadId,
+    p_conversation_id: conversationId,
+    p_attempt_id: attemptId,
+    p_error: String(error || 'graph_failure').slice(0, 1000),
+    p_delivery_kind: deliveryKind || 'text',
+  });
+  if (rpcError) throw rpcError;
 }
 
 async function runIcfDailyFollowups({
@@ -364,39 +431,43 @@ async function runIcfDailyFollowups({
     saveConversationEvent(supabase, conversationId, type, payload);
 
   for (const candidate of candidates) {
+    let attemptId = null;
+    let conversationId = candidate.conversation_id || null;
+    let deliveryKind = null;
+
     try {
-      const ensured = await ensureIcfConversation(supabase, candidate, logger);
-      const conversation = ensured.conversation;
-      if (!conversation || ensured.blocked) {
-        summary.blocked += 1;
-        summary.decisions.push({ lead_id: candidate.lead_id, action: 'blocked', reason: ensured.reason || 'conversation_unavailable' });
-        continue;
-      }
-
-      const eligibility = await recheckCandidateEligibility(supabase, candidate, conversation);
-      if (!eligibility.allowed) {
-        summary.blocked += 1;
-        summary.decisions.push({ lead_id: candidate.lead_id, action: 'blocked', reason: eligibility.reason });
-        continue;
-      }
-
       const to = normalizePhoneNumber(candidate.whatsapp) || candidate.whatsapp;
-      const lastInboundAt = await fetchLastInboundAt(supabase, conversation.id);
-      const useText = isWithinCustomerServiceWindow(lastInboundAt, now);
-      const deliveryKind = useText ? 'text' : 'template';
-
-      const policy = await resolveAutomatedReplyPolicy({
+      const candidateUseText = isWithinCustomerServiceWindow(candidate.last_customer_message_at, now);
+      const candidateDeliveryKind = candidateUseText ? 'text' : 'template';
+      const candidatePolicy = await resolveAutomatedReplyPolicy({
         supabase,
-        conversationRow: eligibility.conversation,
+        conversationRow: {
+          id: candidate.conversation_id || null,
+          ai_state: candidate.conversation_ai_state || {},
+        },
         from: to,
       });
 
-      if (!useText && !settings.template_name) {
+      if (!candidateUseText && !settings.template_name) {
         summary.blocked += 1;
-        summary.decisions.push({ lead_id: candidate.lead_id, action: 'blocked', reason: 'template_not_configured' });
-        await saveConversationEvent(supabase, conversation.id, 'icf_daily_followup_blocked_template_missing', {
+        summary.decisions.push({
           lead_id: candidate.lead_id,
-          source: FOLLOWUP_KIND,
+          action: dryRun ? 'would_block' : 'blocked',
+          reason: 'template_not_configured',
+          delivery_kind: 'template',
+          would_materialize_conversation: !candidate.conversation_id,
+        });
+        continue;
+      }
+
+      if (!candidatePolicy.allowAutomatedReply) {
+        summary.blocked += 1;
+        summary.decisions.push({
+          lead_id: candidate.lead_id,
+          action: dryRun ? 'would_block' : 'blocked',
+          reason: candidatePolicy.reason_code || 'policy_blocked',
+          delivery_kind: candidateDeliveryKind,
+          would_materialize_conversation: !candidate.conversation_id,
         });
         continue;
       }
@@ -404,11 +475,75 @@ async function runIcfDailyFollowups({
       if (dryRun) {
         summary.decisions.push({
           lead_id: candidate.lead_id,
-          conversation_id: conversation.id,
+          conversation_id: candidate.conversation_id || null,
           action: 'would_send',
-          delivery_kind: deliveryKind,
-          policy_allowed: policy.allowAutomatedReply === true,
-          policy_reason: policy.reason_code || null,
+          delivery_kind: candidateDeliveryKind,
+          policy_allowed: true,
+          policy_reason: candidatePolicy.reason_code || null,
+          would_materialize_conversation: !candidate.conversation_id,
+        });
+        continue;
+      }
+
+      const ensured = await ensureIcfConversation(supabase, candidate, logger);
+      const conversation = ensured.conversation;
+      conversationId = conversation?.id || null;
+      if (!conversation || ensured.blocked) {
+        summary.blocked += 1;
+        summary.decisions.push({
+          lead_id: candidate.lead_id,
+          action: 'blocked',
+          reason: ensured.reason || 'conversation_unavailable',
+        });
+        continue;
+      }
+
+      const eligibility = await recheckCandidateEligibility(supabase, candidate, conversation);
+      if (!eligibility.allowed) {
+        summary.blocked += 1;
+        summary.decisions.push({
+          lead_id: candidate.lead_id,
+          action: 'blocked',
+          reason: eligibility.reason,
+        });
+        continue;
+      }
+
+      const lastInboundAt = await fetchLastInboundAt(supabase, conversation.id);
+      const useText = isWithinCustomerServiceWindow(lastInboundAt, now);
+      deliveryKind = useText ? 'text' : 'template';
+
+      if (!useText && !settings.template_name) {
+        summary.blocked += 1;
+        summary.decisions.push({ lead_id: candidate.lead_id, action: 'blocked', reason: 'template_not_configured' });
+        continue;
+      }
+
+      const policy = await resolveAutomatedReplyPolicy({
+        supabase,
+        conversationRow: eligibility.conversation,
+        from: to,
+      });
+      if (!policy.allowAutomatedReply) {
+        summary.blocked += 1;
+        summary.decisions.push({
+          lead_id: candidate.lead_id,
+          action: 'blocked',
+          reason: policy.reason_code || 'policy_blocked',
+        });
+        continue;
+      }
+
+      attemptId = randomUUID();
+      const claim = await claimFollowup(supabase, candidate.lead_id, conversation.id, attemptId);
+      if (!claim?.claimed) {
+        attemptId = null;
+        summary.blocked += 1;
+        summary.decisions.push({
+          lead_id: candidate.lead_id,
+          action: 'blocked',
+          reason: claim?.reason || 'claim_denied',
+          next_due_at: claim?.next_due_at || null,
         });
         continue;
       }
@@ -420,6 +555,7 @@ async function runIcfDailyFollowups({
           validation_id: candidate.validation_id,
           folio_code: candidate.folio_code || null,
           followup_count_before_send: candidate.followup_count || 0,
+          attempt_id: attemptId,
         },
       };
 
@@ -456,6 +592,13 @@ async function runIcfDailyFollowups({
       }
 
       if (!sendResult?.sent || !sendResult?.wamid) {
+        await unclaimFollowup(
+          supabase,
+          candidate.lead_id,
+          attemptId,
+          sendResult?.reason_code || 'pre_graph_send_blocked',
+        );
+        attemptId = null;
         summary.blocked += 1;
         summary.decisions.push({
           lead_id: candidate.lead_id,
@@ -468,6 +611,7 @@ async function runIcfDailyFollowups({
       await attachWamidToPersistedRows(supabase, sendResult.rows, sendResult.wamid, {
         automation: FOLLOWUP_KIND,
         lead_id: candidate.lead_id,
+        attempt_id: attemptId,
         delivery_kind: deliveryKind,
       });
 
@@ -476,9 +620,13 @@ async function runIcfDailyFollowups({
         p_conversation_id: conversation.id,
         p_wamid: sendResult.wamid,
         p_delivery_kind: deliveryKind,
+        p_attempt_id: attemptId,
       });
       if (recordError || recorded?.ok === false) {
-        throw recordError || new Error(recorded?.code || 'followup_record_failed');
+        const err = recordError || new Error(recorded?.code || 'followup_record_failed');
+        err.graphAttempted = true;
+        err.persistedRows = sendResult.rows || [];
+        throw err;
       }
 
       summary.sent += 1;
@@ -489,17 +637,49 @@ async function runIcfDailyFollowups({
         action: 'sent',
         delivery_kind: deliveryKind,
         wamid: sendResult.wamid,
+        attempt_id: attemptId,
       });
+      attemptId = null;
     } catch (err) {
+      const errorText = String(err?.message || err);
+      if (attemptId) {
+        try {
+          if (err?.graphAttempted) {
+            await markPersistedRowsFailed(supabase, err.persistedRows || [], errorText, {
+              automation: FOLLOWUP_KIND,
+              lead_id: candidate.lead_id,
+              attempt_id: attemptId,
+              delivery_kind: deliveryKind || err?.deliveryKind || null,
+            });
+            await recordGraphFailure(supabase, {
+              leadId: candidate.lead_id,
+              conversationId,
+              attemptId,
+              error: errorText,
+              deliveryKind: deliveryKind || err?.deliveryKind || 'text',
+            });
+          } else {
+            await unclaimFollowup(supabase, candidate.lead_id, attemptId, errorText);
+          }
+        } catch (finalizeErr) {
+          warn(logger, 'icf_daily_followup_finalize_error', {
+            lead_id: candidate.lead_id,
+            attempt_id: attemptId,
+            error: String(finalizeErr?.message || finalizeErr),
+          });
+        }
+      }
+
       summary.errors += 1;
       warn(logger, 'icf_daily_followup_error', {
         lead_id: candidate.lead_id,
-        error: String(err?.message || err),
+        error: errorText,
       });
       summary.decisions.push({
         lead_id: candidate.lead_id,
         action: 'error',
-        reason: String(err?.message || err),
+        reason: errorText,
+        attempt_id: attemptId,
       });
     }
   }
@@ -614,6 +794,9 @@ module.exports = {
   loadIcfFollowupSettings,
   ensureIcfConversation,
   recheckCandidateEligibility,
+  buildPersistenceAdapter,
+  attachWamidToPersistedRows,
+  markPersistedRowsFailed,
   classifyIcfFollowupReply,
   handleIcfFollowupInbound,
   runIcfDailyFollowups,
