@@ -8,6 +8,7 @@
  * - mantener fail-closed ante errores de policy;
  * - persistir el outbound en el hilo ATENA;
  * - exigir wamid real antes de considerar un envío exitoso.
+ * - para ICF/Seguimiento, exigir GO explícito antes de persistir y de nuevo antes de Graph.
  */
 
 const axios = require('axios');
@@ -19,6 +20,7 @@ const {
 } = require('../conversation/perseoGatekeeper');
 
 const EVENT_AUTOMATION_BLOCKED = 'ai_auto_response_skipped_human_attention';
+const ICF_AUTOMATION_KIND = 'perseo_icf_daily';
 
 function graphApiVersionPath() {
   const v = GRAPH_API_VERSION || 'v19.0';
@@ -94,6 +96,90 @@ function enrichGraphAttemptError(error, persisted, deliveryKind) {
   err.persistedOutbound = Array.isArray(persisted?.outbound) ? persisted.outbound : [];
   err.deliveryKind = deliveryKind;
   return err;
+}
+
+function isIcfFollowupPayload(rawPayload = {}) {
+  return rawPayload?.perseo_metadata?.automation === ICF_AUTOMATION_KIND;
+}
+
+async function authorizeIcfFollowupDelivery({ rawPayload = {}, client, phase = 'pre_persist' } = {}) {
+  if (!isIcfFollowupPayload(rawPayload)) {
+    return { allowed: true, applicable: false };
+  }
+
+  const effectiveClient = client || getDefaultPolicyClient();
+  const leadId = rawPayload?.perseo_metadata?.lead_id || null;
+  if (!effectiveClient || !leadId) {
+    return { allowed: false, applicable: true, reason_code: 'followup_delivery_context_missing', phase };
+  }
+
+  try {
+    const { data: action, error: actionError } = await effectiveClient
+      .from('followup_actions')
+      .select('id, status, scheduled_at')
+      .eq('lead_id', leadId)
+      .eq('action_type', 'confirm_request')
+      .eq('template_key', 'confirm_request_v1')
+      .eq('audience', 'customer')
+      .eq('channel', 'whatsapp')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (actionError || !action?.id) {
+      return { allowed: false, applicable: true, reason_code: 'followup_action_missing', phase };
+    }
+
+    const { data: authz, error: authzError } = await effectiveClient.rpc(
+      'authorize_followup_customer_delivery',
+      { p_action_id: action.id },
+    );
+
+    if (authzError || authz?.authorized !== true) {
+      return {
+        allowed: false,
+        applicable: true,
+        action_id: action.id,
+        reason_code: authz?.reason || authzError?.message || 'followup_delivery_not_authorized',
+        phase,
+      };
+    }
+
+    return {
+      allowed: true,
+      applicable: true,
+      action_id: action.id,
+      reason_code: authz?.reason || 'authorized',
+      phase,
+    };
+  } catch (err) {
+    return {
+      allowed: false,
+      applicable: true,
+      reason_code: String(err?.message || 'followup_delivery_authorization_failed'),
+      phase,
+    };
+  }
+}
+
+async function blockIfIcfDeliveryUnauthorized({ rawPayload, policyClient, phase, conversationId, logEvent }) {
+  const authorization = await authorizeIcfFollowupDelivery({
+    rawPayload,
+    client: policyClient,
+    phase,
+  });
+  if (authorization.allowed) return authorization;
+
+  if (typeof logEvent === 'function') {
+    logEvent('perseo_icf_delivery_blocked', {
+      conversation_id: conversationId,
+      action_id: authorization.action_id || null,
+      reason_code: authorization.reason_code,
+      phase,
+      graph_attempted: false,
+    });
+  }
+  return authorization;
 }
 
 async function revalidateAutomatedReplyPolicy({ conversationId, to, initialPolicy, client }) {
@@ -250,6 +336,17 @@ async function sendPerseoAutomatedWhatsApp({
     return { sent: false, reason_code: gate.policy?.reason_code };
   }
 
+  const prePersist = await blockIfIcfDeliveryUnauthorized({
+    rawPayload,
+    policyClient,
+    phase: 'pre_persist',
+    conversationId,
+    logEvent,
+  });
+  if (!prePersist.allowed) {
+    return { sent: false, reason_code: prePersist.reason_code, graph_attempted: false };
+  }
+
   const persisted = await saveOutboundMessages({
     conversationId,
     messages: outbound,
@@ -263,6 +360,23 @@ async function sendPerseoAutomatedWhatsApp({
       fragments: outbound.length,
       policy_revalidated_before_graph: channel === 'ia',
     });
+  }
+
+  const preGraph = await blockIfIcfDeliveryUnauthorized({
+    rawPayload,
+    policyClient,
+    phase: 'pre_graph',
+    conversationId,
+    logEvent,
+  });
+  if (!preGraph.allowed) {
+    return {
+      sent: false,
+      reason_code: preGraph.reason_code,
+      graph_attempted: false,
+      rows: persisted?.rows ?? [],
+      outbound: persisted?.outbound ?? outbound,
+    };
   }
 
   const wamids = [];
@@ -330,6 +444,17 @@ async function sendPerseoAutomatedWhatsAppTemplate({
     return { sent: false, reason_code: gate.policy?.reason_code };
   }
 
+  const prePersist = await blockIfIcfDeliveryUnauthorized({
+    rawPayload,
+    policyClient,
+    phase: 'pre_persist',
+    conversationId,
+    logEvent,
+  });
+  if (!prePersist.allowed) {
+    return { sent: false, reason_code: prePersist.reason_code, graph_attempted: false };
+  }
+
   const persisted = await saveOutboundMessages({
     conversationId,
     messages: [persistedText],
@@ -340,6 +465,23 @@ async function sendPerseoAutomatedWhatsAppTemplate({
       whatsapp_template_language: templateLanguage,
     },
   });
+
+  const preGraph = await blockIfIcfDeliveryUnauthorized({
+    rawPayload,
+    policyClient,
+    phase: 'pre_graph',
+    conversationId,
+    logEvent,
+  });
+  if (!preGraph.allowed) {
+    return {
+      sent: false,
+      reason_code: preGraph.reason_code,
+      graph_attempted: false,
+      rows: persisted?.rows ?? [],
+      outbound: persisted?.outbound ?? [persistedText],
+    };
+  }
 
   let wamids;
   try {
@@ -382,5 +524,7 @@ module.exports = {
   requireGraphWamid,
   enrichGraphAttemptError,
   revalidateAutomatedReplyPolicy,
+  authorizeIcfFollowupDelivery,
+  isIcfFollowupPayload,
   getDefaultPolicyClient,
 };
