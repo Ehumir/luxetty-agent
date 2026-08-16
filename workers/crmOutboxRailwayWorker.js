@@ -2,18 +2,11 @@
 'use strict';
 
 /**
- * M4-02 — Dedicated Railway worker process (NOT the HTTP webhook).
+ * Dedicated Railway worker process.
  *
- * Start command (Railway service):
- *   node workers/crmOutboxRailwayWorker.js
- *
- * Required env:
- *   PERSEO_CRM_WORKER_PROCESS_ENABLED=true
- *   PERSEO_CRM_WORKER_ASYNC_ENABLED=true
- *   PERSEO_CRM_RUNTIME_PERSISTENT_ENABLED=true
- *   SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
- *
- * Store selection: mode=db when crm_outbox probe succeeds (see crmWorkerStoreBootstrap).
+ * Existing responsibility: CRM outbox worker.
+ * Sprint 3: also runs a lightweight ICF daily-followup eligibility scan on an
+ * independent cadence. The DB enforces >=24h between commercial reminders.
  */
 
 require('dotenv').config();
@@ -28,15 +21,50 @@ const {
 const { bootstrapCrmWorkerStore } = require('../conversation/v3/runtime/crmWorkerStoreBootstrap');
 const { getCrmWorkerPollMs } = require('../config/perseoM402Flags');
 const { v3Log } = require('../conversation/v3/core/v3Logger');
+const { runIcfDailyFollowups } = require('../services/icfDailyFollowup');
 
 const workerId = defaultWorkerId();
 let stopping = false;
-/** @type {import('../conversation/v3/runtime/crmRuntimeStore').DbCrmRuntimeStore|null} */
 let workerStore = null;
 let workerStoreMode = 'unknown';
+let lastIcfFollowupScanAt = 0;
 
 function logEvent(type, payload) {
   v3Log(type, { worker_id: workerId, ...payload });
+}
+
+function icfScanIntervalMs() {
+  const configured = Number(process.env.PERSEO_ICF_FOLLOWUP_SCAN_INTERVAL_MS || 15 * 60 * 1000);
+  return Math.max(60 * 1000, Math.min(configured, 60 * 60 * 1000));
+}
+
+async function maybeRunIcfFollowupScan() {
+  const now = Date.now();
+  if (now - lastIcfFollowupScanAt < icfScanIntervalMs()) return;
+  lastIcfFollowupScanAt = now;
+
+  try {
+    const summary = await runIcfDailyFollowups({
+      supabase,
+      now: new Date(now),
+      logger: {
+        info: (event, payload) => logEvent(event, payload),
+        warn: (event, payload) => logEvent(event, { level: 'warn', ...payload }),
+      },
+    });
+    logEvent('icf_daily_followup_worker_scan', {
+      skipped: summary?.skipped === true,
+      reason: summary?.reason || null,
+      candidates: summary?.candidates ?? 0,
+      sent: summary?.sent ?? 0,
+      blocked: summary?.blocked ?? 0,
+      errors: summary?.errors ?? 0,
+    });
+  } catch (err) {
+    logEvent('icf_daily_followup_worker_error', {
+      error: String(err?.message || err),
+    });
+  }
 }
 
 async function tick() {
@@ -56,6 +84,8 @@ async function tick() {
   } catch (err) {
     logEvent('crm_worker_tick_error', { error: String(err?.message || err) });
   }
+
+  await maybeRunIcfFollowupScan();
 }
 
 async function main() {
@@ -74,6 +104,7 @@ async function main() {
     JSON.stringify({
       event: 'crm_worker_startup',
       worker_id: workerId,
+      icf_followup_scan_interval_ms: icfScanIntervalMs(),
       ...boot.diagnostics,
     }),
   );
