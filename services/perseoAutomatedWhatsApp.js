@@ -87,10 +87,15 @@ function requireGraphWamid(response) {
   return wamids;
 }
 
-/**
- * Revalida política contra el estado persistido inmediatamente antes del outbound IA.
- * Si la conversación desaparece o falla la lectura, se bloquea (fail-closed).
- */
+function enrichGraphAttemptError(error, persisted, deliveryKind) {
+  const err = error instanceof Error ? error : new Error(String(error || 'WHATSAPP_GRAPH_FAILURE'));
+  err.graphAttempted = true;
+  err.persistedRows = Array.isArray(persisted?.rows) ? persisted.rows : [];
+  err.persistedOutbound = Array.isArray(persisted?.outbound) ? persisted.outbound : [];
+  err.deliveryKind = deliveryKind;
+  return err;
+}
+
 async function revalidateAutomatedReplyPolicy({ conversationId, to, initialPolicy, client }) {
   const effectiveClient = client || getDefaultPolicyClient();
   if (!conversationId || !effectiveClient) {
@@ -212,9 +217,6 @@ function assertNotArgos({ argosMode, rawPayload, policy, conversationId, channel
   }
 }
 
-/**
- * Envío automatizado de texto libre. Conserva el contrato histórico y ahora devuelve wamid(s).
- */
 async function sendPerseoAutomatedWhatsApp({
   channel,
   to,
@@ -264,9 +266,13 @@ async function sendPerseoAutomatedWhatsApp({
   }
 
   const wamids = [];
-  for (const body of outbound) {
-    const response = await graphPostWhatsAppText(to, body);
-    wamids.push(...requireGraphWamid(response));
+  try {
+    for (const body of outbound) {
+      const response = await graphPostWhatsAppText(to, body);
+      wamids.push(...requireGraphWamid(response));
+    }
+  } catch (err) {
+    throw enrichGraphAttemptError(err, persisted, 'text');
   }
 
   if (typeof logEvent === 'function') {
@@ -288,10 +294,6 @@ async function sendPerseoAutomatedWhatsApp({
   };
 }
 
-/**
- * Envío automatizado mediante template aprobado de WhatsApp.
- * El texto de display se persiste en ATENA para que el hilo siga siendo legible.
- */
 async function sendPerseoAutomatedWhatsAppTemplate({
   channel = 'ia',
   to,
@@ -339,12 +341,17 @@ async function sendPerseoAutomatedWhatsAppTemplate({
     },
   });
 
-  const response = await graphPostWhatsAppTemplate(to, {
-    name: templateName,
-    language: templateLanguage,
-    components: templateComponents,
-  });
-  const wamids = requireGraphWamid(response);
+  let wamids;
+  try {
+    const response = await graphPostWhatsAppTemplate(to, {
+      name: templateName,
+      language: templateLanguage,
+      components: templateComponents,
+    });
+    wamids = requireGraphWamid(response);
+  } catch (err) {
+    throw enrichGraphAttemptError(err, persisted, 'template');
+  }
 
   if (typeof logEvent === 'function') {
     logEvent('perseo_template_outbound_sent', {
@@ -373,6 +380,7 @@ module.exports = {
   graphPostWhatsAppPayload,
   extractGraphWamids,
   requireGraphWamid,
+  enrichGraphAttemptError,
   revalidateAutomatedReplyPolicy,
   getDefaultPolicyClient,
 };

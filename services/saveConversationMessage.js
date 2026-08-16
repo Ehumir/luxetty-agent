@@ -32,8 +32,6 @@ function hasMetaMessageId(metaMessageId) {
 async function maybeHandleIcfFollowupInbound(supabase, { conversationId, direction, messageText }) {
   if (direction !== 'inbound' || !conversationId || !String(messageText || '').trim()) return null;
   try {
-    // Lazy import avoids a module cycle: icfDailyFollowup uses saveConversationMessage
-    // for its outbound persistence adapter.
     const { handleIcfFollowupInbound } = require('./icfDailyFollowup');
     const result = await handleIcfFollowupInbound({
       supabase,
@@ -51,8 +49,6 @@ async function maybeHandleIcfFollowupInbound(supabase, { conversationId, directi
     }
     return result || null;
   } catch (err) {
-    // Backward-compatible fail-open while Sprint 3 migration is not deployed.
-    // Once deployed, errors remain visible in logs but never drop the inbound.
     console.warn('icf_followup_inbound_resolution_skipped', {
       conversation_id: conversationId,
       error: String(err?.message || err),
@@ -74,6 +70,7 @@ async function saveConversationMessage(supabase, {
   transcriptionText = null,
   metaMessageId = null,
   rawPayload = {},
+  metadata = null,
 }) {
   try {
     if (!conversationId) return null;
@@ -94,18 +91,23 @@ async function saveConversationMessage(supabase, {
       }
     }
 
+    const insertPayload = {
+      conversation_id: conversationId,
+      direction,
+      sender_type: senderType,
+      message_type: messageType,
+      message_text: messageText,
+      transcription_text: transcriptionText,
+      meta_message_id: metaMessageId,
+      raw_payload: rawPayload,
+    };
+    if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+      insertPayload.metadata = metadata;
+    }
+
     const { data, error } = await supabase
       .from('conversation_messages')
-      .insert({
-        conversation_id: conversationId,
-        direction,
-        sender_type: senderType,
-        message_type: messageType,
-        message_text: messageText,
-        transcription_text: transcriptionText,
-        meta_message_id: metaMessageId,
-        raw_payload: rawPayload,
-      })
+      .insert(insertPayload)
       .select()
       .single();
 
