@@ -21,7 +21,7 @@ const {
 const { bootstrapCrmWorkerStore } = require('../conversation/v3/runtime/crmWorkerStoreBootstrap');
 const { getCrmWorkerPollMs } = require('../config/perseoM402Flags');
 const { v3Log } = require('../conversation/v3/core/v3Logger');
-const { runIcfDailyFollowups } = require('../services/icfDailyFollowup');
+const { runIcfDailyFollowups } = require('../services/icfFollowupProduction');
 
 const workerId = defaultWorkerId();
 let stopping = false;
