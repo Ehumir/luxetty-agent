@@ -131,16 +131,34 @@ test('uniqueNormalizedMimeHints dedupes and preserves order', () => {
   assert.deepEqual(hints, ['audio/ogg']);
 });
 
-test('descriptor marks video as received but not downloadable in 4A', () => {
+test('descriptor marks video as downloadable in Sprint C', () => {
   const descriptor = getInboundMediaDescriptor({
     type: 'video',
     video: {
       id: 'vid-1',
       mime_type: 'video/mp4',
+      caption: 'Recorrido',
     },
   });
 
   assert.equal(descriptor.mediaType, 'video');
-  assert.equal(descriptor.shouldDownload, false);
-  assert.equal(descriptor.reason, 'skipped_video_not_processed');
+  assert.equal(descriptor.mediaId, 'vid-1');
+  assert.equal(descriptor.caption, 'Recorrido');
+  assert.equal(descriptor.shouldDownload, true);
+  assert.equal(isAllowedDownload(descriptor).allowed, true);
+});
+
+test('descriptor marks sticker webp as downloadable in Sprint C', () => {
+  const descriptor = getInboundMediaDescriptor({
+    type: 'sticker',
+    sticker: {
+      id: 'stk-1',
+      mime_type: 'image/webp',
+    },
+  });
+
+  assert.equal(descriptor.mediaType, 'sticker');
+  assert.equal(descriptor.mediaId, 'stk-1');
+  assert.equal(descriptor.shouldDownload, true);
+  assert.equal(isAllowedDownload(descriptor).allowed, true);
 });
