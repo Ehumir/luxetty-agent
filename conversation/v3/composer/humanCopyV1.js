@@ -3,7 +3,7 @@
 /** Copy base PERSEO V1 — tono asesor humano, sin lenguaje operativo/CRM. */
 
 const GLOBAL_OPENING_VARIANTS = Object.freeze([
-  'Hola, soy el asistente de Luxetty. ¿En qué puedo ayudarte hoy?',
+  'Hola, soy el asesor IA de Luxetty. ¿Te apoyo para comprar, vender o rentar una propiedad?',
   'Hola, bienvenido a Luxetty. ¿Buscas comprar, vender o rentar una propiedad?',
   'Hola, con gusto te atiendo desde Luxetty. ¿Te apoyo con compra, venta o renta?',
   'Buen día. Soy el asistente de Luxetty. ¿Qué te gustaría hacer: comprar, vender o rentar?',
@@ -23,9 +23,9 @@ const FINAL_CLOSE_LINE = 'Gracias por contactarnos. Que tengas excelente día.';
 function handoffAdvisorContinuation(firstName) {
   const nm = firstName ? String(firstName).trim() : null;
   if (nm) {
-    return `Perfecto, ${nm}. Un asesor de Luxetty continuará contigo por este medio.`;
+    return `Perfecto, ${nm}. Un asesor de Luxetty continuará contigo por este medio. Si necesitas algo más antes del contacto, dímelo.`;
   }
-  return 'Perfecto. Un asesor de Luxetty continuará contigo por este medio.';
+  return 'Perfecto. Un asesor de Luxetty continuará contigo por este medio. Si necesitas algo más antes del contacto, dímelo.';
 }
 
 /**

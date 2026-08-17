@@ -5,6 +5,16 @@
  * Códigos alineados con tests v3F33 / propertySpecificFlow.
  */
 const PROPERTY_FIXTURES = {
+  'LUX-A0453': {
+    id: 'argos-fixture-lux-a0453',
+    code: 'LUX-A0453',
+    price_label: '$5,900,000 MXN',
+    price: 5900000,
+    public_url: 'https://luxetty.com/propiedad/lux-a0453',
+    location_label: 'Cumbres',
+    is_active: true,
+    is_published: true,
+  },
   'LUX-A0470': {
     id: 'argos-fixture-lux-a0470',
     code: 'LUX-A0470',

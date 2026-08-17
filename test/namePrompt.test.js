@@ -110,17 +110,18 @@ test('si ya pidió nombre en outbound reciente → no repite', () => {
   assert.equal(messages, 'Segunda ayuda útil.');
 });
 
-test('handoff_sent + gracias + sin nombre: base corta + append pide nombre', () => {
+test('handoff_sent + gracias + sin nombre: cierre corto sin reiniciar captura de identidad', () => {
   const contact = { first_name: 'Cliente' };
   const aiState = { handoff_sent: true, awaiting_field: null };
-  const { messages } = appendNameRequestIfNeeded('Gracias a ti. Si surge algo más, aquí estoy.', {
+  const { messages, statePatch } = appendNameRequestIfNeeded('Gracias a ti. Si surge algo más, aquí estoy.', {
     contact,
     aiState,
     recentOutboundTexts: [],
     userInboundText: 'gracias',
   });
   assert.match(String(messages), /gracias a ti/i);
-  assert.match(String(messages), /nombre|cómo te llamas|registr/i);
+  assert.doesNotMatch(String(messages), /nombre|cómo te llamas|registr/i);
+  assert.equal(statePatch.awaiting_field, undefined);
 });
 
 test('perfil WA útil + placeholder → confirma registro', () => {

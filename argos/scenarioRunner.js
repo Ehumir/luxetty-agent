@@ -23,12 +23,51 @@ const { normalizeScenarioTurn } = require('./scenarioTurn');
 const { buildConversationSnapshot } = require('./conversationSnapshot');
 const { getSession: getArgosSession } = require('./argosSessionStore');
 
+function createIsolatedReadClient() {
+  function query() {
+    const builder = {
+      select() { return builder; },
+      eq() { return builder; },
+      neq() { return builder; },
+      ilike() { return builder; },
+      in() { return builder; },
+      is() { return builder; },
+      not() { return builder; },
+      or() { return builder; },
+      order() { return builder; },
+      limit() { return builder; },
+      range() { return builder; },
+      lte() { return builder; },
+      gte() { return builder; },
+      async maybeSingle() { return { data: null, error: null }; },
+      async single() { return { data: null, error: null }; },
+      then(resolve, reject) {
+        return Promise.resolve({ data: [], error: null }).then(resolve, reject);
+      },
+    };
+    return builder;
+  }
+  return {
+    from() { return query(); },
+    rpc() {
+      return {
+        then(resolve, reject) {
+          return Promise.resolve({ data: null, error: null }).then(resolve, reject);
+        },
+      };
+    },
+  };
+}
+
+const isolatedReadClient = createIsolatedReadClient();
+
 function argosConversationId(session_id) {
   return `argos:${session_id}`;
 }
 
 function resolveSupabaseRaw(input) {
   if (input.supabaseRaw) return input.supabaseRaw;
+  if (process.env.PERSEO_TEST_ISOLATED === 'true') return isolatedReadClient;
   const flags = input.flags || {};
   if (flags.crm_dry_run === false) return null;
   const { supabase } = require('../services/supabaseService');

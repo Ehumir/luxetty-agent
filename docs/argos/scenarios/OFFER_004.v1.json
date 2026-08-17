@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "scenario_code": "OFFER_004",
-  "scenario_version": 1,
+  "scenario_version": 2,
   "priority": "P1",
   "family": "offer",
   "category": "venta_valuacion_sin_precio",
@@ -22,7 +22,7 @@
     "known_zone": "Cumbres",
     "known_name": "Jorge",
     "advisor_contact_consent": "ACCEPTED",
-    "crm_ready": false
+    "crm_ready": true
   },
   "must_not": {
     "flow_restart": true,
@@ -34,5 +34,8 @@
     "write_contacts": true,
     "write_leads": true
   },
-  "changelog": [{ "version": 1, "date": "2026-05-19", "change": "M1-PR-08 OFFER_004 valuation no price." }]
+  "changelog": [
+    { "version": 1, "date": "2026-05-19", "change": "M1-PR-08 OFFER_004 valuation no price." },
+    { "version": 2, "date": "2026-07-28", "change": "Replaced obsolete expectation: explicit consent plus identity and zone now satisfies the CRM gate even when valuation_requested replaces expected_price." }
+  ]
 }

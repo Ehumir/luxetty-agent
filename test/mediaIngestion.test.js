@@ -162,7 +162,7 @@ test('F) error descargando media: no rompe y retorna failed', async () => {
     },
   };
 
-  const result = await resolveInboundMedia(message, { httpClient });
+  const result = await resolveInboundMedia(message, { httpClient, skipAuth: true });
 
   assert.equal(result.success, false);
   assert.equal(result.download_status, 'failed');

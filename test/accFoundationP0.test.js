@@ -9,7 +9,9 @@ const express = require('express');
 const http = require('node:http');
 
 const ROOT = path.join(__dirname, '..');
-const ATENA_ROOT = path.join(ROOT, '..', 'luxetty-atena');
+const ATENA_ROOT = process.env.ATENA_ROOT
+  ? path.resolve(process.env.ATENA_ROOT)
+  : path.join(ROOT, '..', 'luxetty-atena');
 const MIGRATION_PATH = path.join(
   ATENA_ROOT,
   'supabase/migrations/20260706120000_acc_connector_registry.sql',

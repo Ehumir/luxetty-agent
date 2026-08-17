@@ -10,6 +10,7 @@ node_modules/
 dist/
 build/
 coverage/
+.artifacts/
 
 # ARGOS local QA artifacts (no commitear evidencia Postman local)
 docs/argos/evidence/
