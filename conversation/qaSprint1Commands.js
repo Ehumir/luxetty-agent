@@ -1,7 +1,8 @@
 'use strict';
 
 /**
- * Sprint 1 — Comandos QA seguros (!reset, !resetcrm, !state, !close, !leadcheck).
+ * Sprint 1 — Comandos QA seguros (!reset, !resetcrm, !state, !close, !leadcheck)
+ * y respuestas a plantillas QA del Centro de Activación.
  * Sin OpenAI, sin CRM, sin búsqueda de propiedades en estos turnos.
  */
 
@@ -21,6 +22,176 @@ function maskPhoneForLog(phone) {
   if (!value) return null;
   if (value.length <= 4) return `***${value}`;
   return `***${value.slice(-4)}`;
+}
+
+function sameQaPhone(left, right) {
+  const a = normalizePhoneForAllowlist(left);
+  const b = normalizePhoneForAllowlist(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  // Meta puede entregar MX como 521XXXXXXXXXX y la allowlist como 52XXXXXXXXXX.
+  // Para QA autorizado, el número nacional de 10 dígitos debe coincidir exactamente.
+  return a.length >= 10 && b.length >= 10 && a.slice(-10) === b.slice(-10);
+}
+
+function extractQaTemplateReplyContext(rawPayload) {
+  const payload = rawPayload && typeof rawPayload === 'object' ? rawPayload : {};
+  const message = payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+  if (!message || typeof message !== 'object') return null;
+  const contextWamid = message?.context?.id != null ? String(message.context.id).trim() : '';
+  if (!contextWamid) return null;
+
+  const type = String(message.type || '').trim();
+  let replyText = '';
+  let replyPayload = '';
+  let interactionType = 'text_reply';
+
+  if (type === 'button') {
+    replyText = String(message?.button?.text || '').trim();
+    replyPayload = String(message?.button?.payload || '').trim();
+    interactionType = 'button_reply';
+  } else if (type === 'interactive') {
+    const button = message?.interactive?.button_reply;
+    const list = message?.interactive?.list_reply;
+    replyText = String(button?.title || list?.title || button?.id || list?.id || '').trim();
+    replyPayload = String(button?.id || list?.id || '').trim();
+    interactionType = 'interactive_reply';
+  } else {
+    replyText = String(message?.text?.body || '').trim();
+    interactionType = 'text_reply';
+  }
+
+  return { contextWamid, replyText, replyPayload, interactionType };
+}
+
+function classifyQaTemplateReply(text, payload = '') {
+  const value = normalizeQaInput(text || payload).toLowerCase();
+  if (value === 'continuar solicitud' || value === 'continuar' || value === 'sí' || value === 'si') {
+    return { recognized: true, action: 'continue' };
+  }
+  if (value === 'cerrar solicitud' || value === 'cerrar' || value === 'no') {
+    return { recognized: true, action: 'close' };
+  }
+  return { recognized: Boolean(value), action: 'other' };
+}
+
+async function maybeHandleFollowupTemplateQaReply({
+  supabase,
+  metaMessageId,
+  from,
+  conversationId,
+  text,
+  nowIso,
+  saveEventFn,
+  logEvent,
+}) {
+  if (!supabase || !metaMessageId) return null;
+
+  try {
+    const { data: inboundRow, error: inboundError } = await supabase
+      .from('conversation_messages')
+      .select('id, raw_payload')
+      .eq('direction', 'inbound')
+      .eq('meta_message_id', metaMessageId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (inboundError || !inboundRow) return null;
+    const context = extractQaTemplateReplyContext(inboundRow.raw_payload);
+    if (!context?.contextWamid) return null;
+
+    const { data: attempt, error: attemptError } = await supabase
+      .from('followup_template_test_attempts')
+      .select('id, template_name, test_number_id, provider_message_id, status')
+      .eq('provider_message_id', context.contextWamid)
+      .eq('status', 'sent')
+      .order('sent_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // No es una respuesta a un envío QA del Centro de Activación.
+    if (attemptError || !attempt) return null;
+
+    const { data: qaNumber, error: numberError } = await supabase
+      .from('followup_test_numbers')
+      .select('id, phone_normalized, is_active')
+      .eq('id', attempt.test_number_id)
+      .maybeSingle();
+
+    const phoneMatches = !numberError && qaNumber?.is_active === true && sameQaPhone(from, qaNumber.phone_normalized);
+    const classification = classifyQaTemplateReply(context.replyText || text, context.replyPayload);
+
+    // Si el WAMID sí pertenece a una prueba, el turno se aísla SIEMPRE del CRM.
+    // Un mismatch de teléfono se considera sospechoso y falla cerrado.
+    const interaction = {
+      attempt_id: attempt.id,
+      template_name: attempt.template_name,
+      test_number_id: attempt.test_number_id,
+      conversation_id: conversationId || null,
+      inbound_message_id: inboundRow.id || null,
+      meta_message_id: metaMessageId,
+      context_wamid: context.contextWamid,
+      interaction_type: context.interactionType,
+      reply_text: context.replyText || text || null,
+      reply_payload: context.replyPayload || null,
+      recognized: phoneMatches && classification.recognized,
+      recognized_action: phoneMatches ? classification.action : 'other',
+      created_at: nowIso(),
+    };
+
+    const { error: interactionError } = await supabase
+      .from('followup_template_test_interactions')
+      .upsert(interaction, { onConflict: 'meta_message_id', ignoreDuplicates: true });
+
+    if (interactionError) {
+      console.warn('followup_template_qa_interaction_persist_failed', {
+        conversation_id: conversationId || null,
+        template_name: attempt.template_name,
+        error: interactionError.message,
+      });
+    }
+
+    const audit = {
+      template_name: attempt.template_name,
+      attempt_id: attempt.id,
+      conversation_id: conversationId || null,
+      inbound_message_id: inboundRow.id || null,
+      meta_message_id: metaMessageId,
+      context_wamid: context.contextWamid,
+      from_masked: maskPhoneForLog(from),
+      phone_match: phoneMatches,
+      recognized_action: phoneMatches ? classification.action : 'blocked_phone_mismatch',
+      source: 'followup_activation_center_qa',
+    };
+
+    if (typeof saveEventFn === 'function' && conversationId) {
+      await saveEventFn(
+        conversationId,
+        phoneMatches ? 'followup_template_qa_reply_isolated' : 'followup_template_qa_reply_phone_mismatch',
+        audit,
+      );
+    }
+    if (typeof logEvent === 'function') {
+      logEvent('followup_template_qa_reply_isolated', audit);
+    }
+
+    return {
+      handled: true,
+      messages: [],
+      qaTemplateReply: true,
+      qaTemplateReplyAudit: audit,
+    };
+  } catch (err) {
+    // Si todavía no podemos demostrar que el context WAMID es QA, no secuestramos
+    // mensajes productivos. El error se registra para diagnóstico.
+    console.warn('followup_template_qa_reply_detection_failed', {
+      conversation_id: conversationId || null,
+      meta_message_id: metaMessageId || null,
+      error: String(err?.message || err),
+    });
+    return null;
+  }
 }
 
 const { RESET_CONVERSATION_REPLY: REPLY_RESET } = require('./v3/composer/humanCopyV1');
@@ -141,6 +312,20 @@ async function processSprint1QaInbound(deps) {
     logEvent,
   } = deps;
 
+  // Antes de interpretar intención o ejecutar CRM, aislar respuestas que referencian
+  // el WAMID de una prueba enviada desde Seguimiento → Centro de Activación.
+  const templateQa = await maybeHandleFollowupTemplateQaReply({
+    supabase,
+    metaMessageId,
+    from,
+    conversationId,
+    text,
+    nowIso,
+    saveEventFn,
+    logEvent,
+  });
+  if (templateQa?.handled) return templateQa;
+
   const cmd = parseSprint1StrictCommand(text);
   if (!cmd) return null;
 
@@ -257,6 +442,10 @@ module.exports = {
   isSprint1QaTesterPhone,
   processSprint1QaInbound,
   formatStateSummary,
+  maybeHandleFollowupTemplateQaReply,
+  extractQaTemplateReplyContext,
+  classifyQaTemplateReply,
+  sameQaPhone,
   REPLY_RESET,
   REPLY_CLOSE,
 };
