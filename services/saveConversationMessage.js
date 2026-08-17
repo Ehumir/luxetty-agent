@@ -32,7 +32,7 @@ function hasMetaMessageId(metaMessageId) {
 async function maybeHandleIcfFollowupInbound(supabase, { conversationId, direction, messageText }) {
   if (direction !== 'inbound' || !conversationId || !String(messageText || '').trim()) return null;
   try {
-    const { handleIcfFollowupInbound } = require('./icfDailyFollowup');
+    const { handleIcfFollowupInbound } = require('./icfFollowupProduction');
     const result = await handleIcfFollowupInbound({
       supabase,
       conversationId,

@@ -5,7 +5,7 @@ const { supabase } = require('../services/supabaseService');
 const { sendPerseoAutomatedWhatsApp } = require('../services/perseoAutomatedWhatsApp');
 const { saveOutboundMessages } = require('../services/saveOutboundMessages');
 const { runInactivityFollowups } = require('../services/followupAutomation');
-const { runIcfDailyFollowups } = require('../services/icfDailyFollowup');
+const { runIcfDailyFollowups } = require('../services/icfFollowupProduction');
 const router = express.Router();
 
 function isFollowupsJobEnabled() {
@@ -86,8 +86,6 @@ router.post('/inactivity-followups', async (req, res) => {
   }
 });
 
-// Sprint 3 — same cron-secret middleware as the existing internal jobs router.
-// dry_run=true may inspect candidates even while the DB setting remains disabled.
 router.post('/icf-daily-followups', async (req, res) => {
   const startedAt = Date.now();
   try {
