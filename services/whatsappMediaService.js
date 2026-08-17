@@ -8,9 +8,9 @@ const {
 const GRAPH_VERSION = GRAPH_API_VERSION || 'v19.0';
 const GRAPH_BASE_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const DEFAULT_TIMEOUT_MS = 15000;
-const DEFAULT_MAX_BYTES = Number(MEDIA_DOWNLOAD_MAX_BYTES || 15 * 1024 * 1024);
+const DEFAULT_MAX_BYTES = Number(MEDIA_DOWNLOAD_MAX_BYTES || 16 * 1024 * 1024);
 
-const DOWNLOADABLE_TYPES = new Set(['image', 'audio', 'voice', 'document']);
+const DOWNLOADABLE_TYPES = new Set(['image', 'audio', 'voice', 'document', 'video', 'sticker']);
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -22,6 +22,8 @@ const ALLOWED_MIME_TYPES = new Set([
   'audio/aac',
   'audio/amr',
   'application/pdf',
+  'video/mp4',
+  'video/3gpp',
 ]);
 
 function sanitizeFilename(name = '') {
@@ -91,6 +93,12 @@ function pickStoredMimeType(descriptor, metadata, download) {
     (descriptor.mediaType === 'audio' || descriptor.mediaType === 'voice')
   ) {
     return 'audio/ogg';
+  }
+  if (hints.length === 1 && hints[0] === 'application/octet-stream' && descriptor.mediaType === 'sticker') {
+    return 'image/webp';
+  }
+  if (hints.length === 1 && hints[0] === 'application/octet-stream' && descriptor.mediaType === 'video') {
+    return 'video/mp4';
   }
   return desc || hints[0] || down || null;
 }
@@ -189,8 +197,7 @@ function getInboundMediaDescriptor(message = {}) {
       mimeType: message?.video?.mime_type || null,
       sha256: message?.video?.sha256 || null,
       voice: false,
-      shouldDownload: false,
-      reason: 'skipped_video_not_processed',
+      shouldDownload: true,
     };
   }
 
@@ -216,8 +223,7 @@ function getInboundMediaDescriptor(message = {}) {
       mimeType: message?.sticker?.mime_type || null,
       sha256: message?.sticker?.sha256 || null,
       voice: false,
-      shouldDownload: false,
-      reason: 'skipped_unsupported',
+      shouldDownload: true,
     };
   }
 
