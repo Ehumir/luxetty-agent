@@ -40,6 +40,8 @@ function mimeToFileExtension(mime) {
   if (m === 'audio/mp4') return 'm4a';
   if (m === 'audio/aac') return 'aac';
   if (m === 'audio/amr') return 'amr';
+  if (m === 'video/mp4') return 'mp4';
+  if (m === 'video/3gpp') return '3gp';
   return 'bin';
 }
 
@@ -180,38 +182,13 @@ async function runInboundMediaIngest({ supabase, logEvent, conversationId, inbou
     wa_message_type: waType,
   });
 
-  const ingestedNow = nowIso();
   const descriptor = getInboundMediaDescriptor(message);
   const metaMediaId = descriptor.mediaId || null;
   const captionPresent = captionPresentFromMessage(message);
   const filename = documentFilenameFromMessage(message);
 
-  if (waType === 'sticker' || waType === 'video') {
-    await applyWhatsappMediaMetadata(
-      supabase,
-      inboundMessageId,
-      buildWhatsappMediaRecord({
-        waMessageType: waType,
-        metaMediaId,
-        mimeType: descriptor.mimeType || null,
-        byteSize: null,
-        storageBucket: null,
-        storagePath: null,
-        downloadStatus: 'skipped_unsupported',
-        ingestedAt: ingestedNow,
-        errorCode: null,
-        filename: null,
-        captionPresent,
-      })
-    );
-    log('perseo_inbound_media_ingest_terminal', {
-      message_id: inboundMessageId,
-      download_status: 'skipped_unsupported',
-    });
-    return;
-  }
-
   if (!hasGraphMediaToken()) {
+    const ingestedNow = nowIso();
     await applyWhatsappMediaMetadata(
       supabase,
       inboundMessageId,
@@ -237,6 +214,7 @@ async function runInboundMediaIngest({ supabase, logEvent, conversationId, inbou
   }
 
   if (!descriptor.shouldDownload) {
+    const ingestedNow = nowIso();
     await applyWhatsappMediaMetadata(
       supabase,
       inboundMessageId,
@@ -363,7 +341,7 @@ async function runInboundMediaIngest({ supabase, logEvent, conversationId, inbou
       storagePath,
       downloadStatus: 'stored',
       ingestedAt: terminalTime,
-      error_code: null,
+      errorCode: null,
       filename,
       captionPresent,
     })
@@ -372,6 +350,7 @@ async function runInboundMediaIngest({ supabase, logEvent, conversationId, inbou
   log('perseo_inbound_media_ingest_stored', {
     message_id: inboundMessageId,
     byte_size: byteSize,
+    wa_message_type: waType,
   });
 }
 
