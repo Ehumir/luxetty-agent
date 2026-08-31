@@ -7,6 +7,26 @@
     "source_sha_before_sprint0": "b3667b39e414b419f19117e1f9ef014bc1ee8fc7",
     "source_branch": "main"
   },
+  "railway": {
+    "project_id": "e74fe868-99da-414c-9008-908a7b04adcc",
+    "source_sha": "b3667b39e414b419f19117e1f9ef014bc1ee8fc7",
+    "services": [
+      {
+        "name": "luxetty-perseo",
+        "service_id": "e67eb973-3c57-4ae9-a558-16c2c1425fac",
+        "environment_id": "ddf25511-8c43-4da5-90cb-0297f0672fe5",
+        "deployment_id": "75ae62c9-50cf-4e51-83c2-b8573eec8684",
+        "status": "success"
+      },
+      {
+        "name": "luxetty-perseo-worker",
+        "service_id": "39e15cdc-ae9b-46b1-9001-7a718434bf10",
+        "environment_id": "0dc956ad-d528-4730-aeda-3641313f88b7",
+        "deployment_id": "35a915ba-c412-43c0-aac2-ddc1b6970287",
+        "status": "success"
+      }
+    ]
+  },
   "atena": {
     "repository": "Ehumir/luxetty-atena",
     "production_git_sha": "9470f171b1f54fab9a1119161b53b7276814793e",
@@ -30,9 +50,25 @@
     "automation_expected_during_program": false,
     "human_only_expected_during_program": true
   },
+  "qa_baseline": {
+    "perseo_regression": {
+      "tests": 157,
+      "passed": 155,
+      "failed": 2,
+      "skipped": 0,
+      "status": "RED_BASELINE",
+      "observed_on_branch_sha": "67ee5ea32369e49643a18e50fc363d2abc2af891",
+      "failures": [
+        "followup cron outbound hotfix > sendPerseoAutomatedWhatsApp does not throw when saveOutboundMessages returns undefined",
+        "Sprint 0C — blindaje conversacional > nombre completo 4 palabras en V3 identity"
+      ]
+    }
+  },
   "notes": [
     "This file is a certification baseline snapshot, not a live status endpoint.",
     "Runtime identity must come from deployment-provided environment variables.",
-    "A release candidate is not certifiable if its runtime SHA cannot be matched to the certified Git SHA."
+    "A release candidate is not certifiable if its runtime SHA cannot be matched to the certified Git SHA.",
+    "RED_BASELINE records pre-existing regression debt and must never be presented as a certified QA pass.",
+    "Sprint 0 G0 certifies release identity and baseline traceability; final functional certification remains blocked until the regression debt is closed and the release matrix passes without skips/XFAIL/not_run."
   ]
 }
