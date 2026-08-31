@@ -1,0 +1,56 @@
+name: PERSEO release baseline
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "sprint0-release-baseline-*"
+
+jobs:
+  release-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      PERSEO_RELEASE_GIT_SHA: ${{ github.sha }}
+      PERSEO_RELEASE_BRANCH: ${{ github.head_ref || github.ref_name }}
+      PERSEO_RELEASE_VERIFY_MODE: ci
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Release manifest contract
+        run: npm run test:release
+
+      - name: Verify current-head release identity
+        run: npm run verify:release-manifest
+
+      - name: PERSEO regression suite
+        run: npm run test:perseo
+
+      - name: ARGOS regression suite
+        run: npm run test:argos
+
+      - name: Assert CI is testing the checked-out SHA
+        shell: bash
+        run: |
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$PERSEO_RELEASE_GIT_SHA"
+          echo "Certified CI SHA: $ACTUAL_SHA"
