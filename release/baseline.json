@@ -1,0 +1,38 @@
+{
+  "schema_version": "perseo-release-baseline/v1",
+  "baseline_id": "PCR1-S0-20260831T0840Z",
+  "captured_at": "2026-08-31T08:40:00Z",
+  "perseo": {
+    "repository": "Ehumir/luxetty-perseo",
+    "source_sha_before_sprint0": "b3667b39e414b419f19117e1f9ef014bc1ee8fc7",
+    "source_branch": "main"
+  },
+  "atena": {
+    "repository": "Ehumir/luxetty-atena",
+    "production_git_sha": "9470f171b1f54fab9a1119161b53b7276814793e",
+    "vercel_production_deployment_id": "dpl_CeL2WjHwrmHTUeT9u6BvFhLYUsS1"
+  },
+  "supabase": {
+    "project_id": "pjoxytwsvbeoivppczdx",
+    "latest_migration_version": "20260831083621",
+    "latest_migration_name": "seguimiento_v2_sprint7_programados_v2"
+  },
+  "models": {
+    "perseo_llm_default": "gpt-5-mini",
+    "rag_embedding_model_observed": "text-embedding-3-small"
+  },
+  "crm_contract": {
+    "solicitud_source_of_truth": "public.leads",
+    "deprecated_table": "public.requests",
+    "public_requests_runtime_usage_allowed": false
+  },
+  "production_control": {
+    "automation_expected_during_program": false,
+    "human_only_expected_during_program": true
+  },
+  "notes": [
+    "This file is a certification baseline snapshot, not a live status endpoint.",
+    "Runtime identity must come from deployment-provided environment variables.",
+    "A release candidate is not certifiable if its runtime SHA cannot be matched to the certified Git SHA."
+  ]
+}
