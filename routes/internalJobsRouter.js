@@ -6,6 +6,7 @@ const { sendPerseoAutomatedWhatsApp } = require('../services/perseoAutomatedWhat
 const { saveOutboundMessages } = require('../services/saveOutboundMessages');
 const { runInactivityFollowups } = require('../services/followupAutomation');
 const { runIcfDailyFollowups } = require('../services/icfFollowupProduction');
+const { buildReleaseManifest } = require('../services/releaseManifest');
 const router = express.Router();
 
 function isFollowupsJobEnabled() {
@@ -51,6 +52,15 @@ async function sendWhatsAppTextForFollowup(phone, messageText, conversation = nu
 
   return { persistedOutbound: true };
 }
+
+router.get('/release-version', (req, res) => {
+  const manifest = buildReleaseManifest(process.env);
+  res.set('Cache-Control', 'no-store');
+  return res.json({
+    ok: manifest.certification?.ok === true,
+    manifest,
+  });
+});
 
 router.post('/inactivity-followups', async (req, res) => {
   const startedAt = Date.now();
