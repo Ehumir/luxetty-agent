@@ -8,6 +8,7 @@ const {
   buildReleaseManifest,
   collectFeatureFlags,
   resolveGitSha,
+  resolveSupabaseProjectRef,
   validateReleaseManifest,
 } = require('../services/releaseManifest');
 
@@ -28,6 +29,14 @@ test('resolveGitSha prioritizes explicit release SHA and Railway SHA', () => {
     }),
     'railway-sha'
   );
+});
+
+test('Supabase project ref is derived without exposing credentials', () => {
+  assert.equal(
+    resolveSupabaseProjectRef({ SUPABASE_URL: 'https://pjoxytwsvbeoivppczdx.supabase.co' }),
+    'pjoxytwsvbeoivppczdx'
+  );
+  assert.equal(resolveSupabaseProjectRef({ SUPABASE_URL: 'not-a-url' }), null);
 });
 
 test('CI manifest is certifiable when SHA and shared backend contract are present', () => {
@@ -52,7 +61,7 @@ test('CI manifest is certifiable when SHA and shared backend contract are presen
   assert.equal(manifest.baseline.perseo_real_estate_usage_of_public_requests_allowed, false);
 });
 
-test('runtime certification fails closed without Railway deployment identity', () => {
+test('runtime certification fails closed without Railway deployment identity and Supabase identity', () => {
   const manifest = buildReleaseManifest({
     RAILWAY_GIT_COMMIT_SHA: '0123456789abcdef0123456789abcdef01234567',
     RAILWAY_GIT_BRANCH: 'main',
@@ -64,9 +73,10 @@ test('runtime certification fails closed without Railway deployment identity', (
   assert.equal(result.ok, false);
   assert.ok(result.errors.includes('runtime.deployment_id_missing'));
   assert.ok(result.errors.includes('runtime.railway_service_id_missing'));
+  assert.ok(result.errors.includes('runtime.supabase_project_ref_missing'));
 });
 
-test('Railway runtime manifest is certifiable with deployment identity', () => {
+test('runtime certification rejects a separate PERSEO Supabase project', () => {
   const manifest = buildReleaseManifest({
     RAILWAY_GIT_COMMIT_SHA: '0123456789abcdef0123456789abcdef01234567',
     RAILWAY_GIT_BRANCH: 'main',
@@ -74,12 +84,31 @@ test('Railway runtime manifest is certifiable with deployment identity', () => {
     RAILWAY_SERVICE_ID: 'service-123',
     RAILWAY_SERVICE_NAME: 'perseo',
     RAILWAY_ENVIRONMENT_NAME: 'production',
+    SUPABASE_URL: 'https://foekcdwubikkmdghbvqj.supabase.co',
+  });
+
+  const result = validateReleaseManifest(manifest, { mode: 'runtime' });
+
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.includes('runtime.shared_supabase_project_mismatch'));
+});
+
+test('Railway runtime manifest is certifiable only with ATENA shared Supabase', () => {
+  const manifest = buildReleaseManifest({
+    RAILWAY_GIT_COMMIT_SHA: '0123456789abcdef0123456789abcdef01234567',
+    RAILWAY_GIT_BRANCH: 'main',
+    RAILWAY_DEPLOYMENT_ID: 'deployment-123',
+    RAILWAY_SERVICE_ID: 'service-123',
+    RAILWAY_SERVICE_NAME: 'perseo',
+    RAILWAY_ENVIRONMENT_NAME: 'production',
+    SUPABASE_URL: 'https://pjoxytwsvbeoivppczdx.supabase.co',
   });
 
   const result = validateReleaseManifest(manifest, { mode: 'runtime' });
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.errors, []);
+  assert.equal(manifest.runtime.supabase_project_ref, 'pjoxytwsvbeoivppczdx');
 });
 
 test('feature flag manifest exposes only an explicit safe boolean allowlist', () => {
