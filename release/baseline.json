@@ -34,6 +34,10 @@
   },
   "supabase": {
     "project_id": "pjoxytwsvbeoivppczdx",
+    "ownership": "ATENA/Luxetty shared backend",
+    "perseo_must_use_same_project": true,
+    "separate_perseo_supabase_allowed": false,
+    "knowledge_base_owner": "ATENA backend",
     "latest_migration_version": "20260831083621",
     "latest_migration_name": "seguimiento_v2_sprint7_programados_v2"
   },
@@ -43,8 +47,10 @@
   },
   "crm_contract": {
     "solicitud_source_of_truth": "public.leads",
-    "deprecated_table": "public.requests",
-    "public_requests_runtime_usage_allowed": false
+    "non_real_estate_requests_table": "public.requests",
+    "public_requests_domain": "provider_vendor_requirements",
+    "perseo_real_estate_usage_of_public_requests_allowed": false,
+    "public_requests_is_deprecated": false
   },
   "production_control": {
     "automation_expected_during_program": false,
@@ -67,6 +73,9 @@
   "notes": [
     "This file is a certification baseline snapshot, not a live status endpoint.",
     "Runtime identity must come from deployment-provided environment variables.",
+    "PERSEO production must use the same Supabase project as ATENA: pjoxytwsvbeoivppczdx.",
+    "The ATENA backend owns the canonical Knowledge Base; PERSEO must not create or depend on a second Knowledge Store.",
+    "public.requests is not deprecated by PCR-1; it belongs to the provider/vendor requirements domain and is forbidden only as the real-estate Lead/Solicitud store.",
     "A release candidate is not certifiable if its runtime SHA cannot be matched to the certified Git SHA.",
     "RED_BASELINE records pre-existing regression debt and must never be presented as a certified QA pass.",
     "Sprint 0 G0 certifies release identity and baseline traceability; final functional certification remains blocked until the regression debt is closed and the release matrix passes without skips/XFAIL/not_run."

@@ -46,6 +46,18 @@ function resolveBranch(env) {
   );
 }
 
+function resolveSupabaseProjectRef(env) {
+  const raw = clean(env.SUPABASE_URL);
+  if (!raw) return null;
+  try {
+    const host = new URL(raw).hostname.toLowerCase();
+    const match = host.match(/^([a-z0-9]+)\.supabase\.co$/);
+    return match ? match[1] : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
 function collectFeatureFlags(env) {
   return Object.fromEntries(
     SAFE_FLAG_KEYS.map((key) => [key, parseBooleanFlag(env[key])])
@@ -73,6 +85,7 @@ function buildReleaseManifest(env = process.env) {
       railway_environment: environmentName,
       node: process.version,
       node_env: clean(env.NODE_ENV),
+      supabase_project_ref: resolveSupabaseProjectRef(env),
     },
     models: {
       llm: clean(env.OPENAI_MODEL) || baseline.models.perseo_llm_default,
@@ -88,10 +101,16 @@ function buildReleaseManifest(env = process.env) {
       atena_production_git_sha: baseline.atena.production_git_sha,
       atena_vercel_production_deployment_id: baseline.atena.vercel_production_deployment_id,
       supabase_project_id: baseline.supabase.project_id,
+      shared_supabase_required: baseline.supabase.perseo_must_use_same_project,
+      separate_perseo_supabase_allowed: baseline.supabase.separate_perseo_supabase_allowed,
+      knowledge_base_owner: baseline.supabase.knowledge_base_owner,
       supabase_latest_migration_version: baseline.supabase.latest_migration_version,
       supabase_latest_migration_name: baseline.supabase.latest_migration_name,
       solicitud_source_of_truth: baseline.crm_contract.solicitud_source_of_truth,
-      deprecated_requests_table: baseline.crm_contract.deprecated_table,
+      non_real_estate_requests_table: baseline.crm_contract.non_real_estate_requests_table,
+      public_requests_domain: baseline.crm_contract.public_requests_domain,
+      perseo_real_estate_usage_of_public_requests_allowed:
+        baseline.crm_contract.perseo_real_estate_usage_of_public_requests_allowed,
     },
   };
 
@@ -105,19 +124,39 @@ function buildReleaseManifest(env = process.env) {
 function validateReleaseManifest(manifest, options = {}) {
   const mode = options.mode || 'ci';
   const errors = [];
+  const canonicalSupabase = 'pjoxytwsvbeoivppczdx';
 
   if (!clean(manifest?.runtime?.git_sha)) errors.push('runtime.git_sha_missing');
   if (!clean(manifest?.baseline?.supabase_latest_migration_version)) {
     errors.push('baseline.supabase_latest_migration_missing');
   }
+  if (manifest?.baseline?.supabase_project_id !== canonicalSupabase) {
+    errors.push('baseline.shared_supabase_project_invalid');
+  }
+  if (manifest?.baseline?.shared_supabase_required !== true) {
+    errors.push('baseline.shared_supabase_requirement_missing');
+  }
+  if (manifest?.baseline?.separate_perseo_supabase_allowed !== false) {
+    errors.push('baseline.separate_perseo_supabase_forbidden');
+  }
   if (manifest?.baseline?.solicitud_source_of_truth !== 'public.leads') {
     errors.push('baseline.crm_source_of_truth_invalid');
+  }
+  if (manifest?.baseline?.non_real_estate_requests_table !== 'public.requests') {
+    errors.push('baseline.requests_domain_table_invalid');
+  }
+  if (manifest?.baseline?.perseo_real_estate_usage_of_public_requests_allowed !== false) {
+    errors.push('baseline.requests_real_estate_boundary_invalid');
   }
 
   if (mode === 'runtime') {
     if (!clean(manifest?.runtime?.deployment_id)) errors.push('runtime.deployment_id_missing');
     if (!clean(manifest?.runtime?.railway_service_id)) errors.push('runtime.railway_service_id_missing');
     if (!clean(manifest?.runtime?.railway_environment)) errors.push('runtime.railway_environment_missing');
+    if (!clean(manifest?.runtime?.supabase_project_ref)) errors.push('runtime.supabase_project_ref_missing');
+    else if (manifest.runtime.supabase_project_ref !== canonicalSupabase) {
+      errors.push('runtime.shared_supabase_project_mismatch');
+    }
   }
 
   return {
@@ -132,5 +171,6 @@ module.exports = {
   buildReleaseManifest,
   collectFeatureFlags,
   resolveGitSha,
+  resolveSupabaseProjectRef,
   validateReleaseManifest,
 };
