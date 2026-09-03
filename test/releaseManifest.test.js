@@ -30,10 +30,10 @@ test('resolveGitSha prioritizes explicit release SHA and Railway SHA', () => {
   );
 });
 
-test('CI manifest is certifiable when SHA is present', () => {
+test('CI manifest is certifiable when SHA and shared backend contract are present', () => {
   const manifest = buildReleaseManifest({
     GITHUB_SHA: '0123456789abcdef0123456789abcdef01234567',
-    GITHUB_REF_NAME: 'sprint0-release-baseline-20260831',
+    GITHUB_REF_NAME: 'pcr1-shared-backend-contract',
     OPENAI_MODEL: 'gpt-5-mini',
   });
 
@@ -42,8 +42,14 @@ test('CI manifest is certifiable when SHA is present', () => {
   assert.equal(result.ok, true);
   assert.deepEqual(result.errors, []);
   assert.equal(manifest.runtime.git_sha, '0123456789abcdef0123456789abcdef01234567');
+  assert.equal(manifest.baseline.supabase_project_id, 'pjoxytwsvbeoivppczdx');
+  assert.equal(manifest.baseline.shared_supabase_required, true);
+  assert.equal(manifest.baseline.separate_perseo_supabase_allowed, false);
+  assert.equal(manifest.baseline.knowledge_base_owner, 'ATENA backend');
   assert.equal(manifest.baseline.solicitud_source_of_truth, 'public.leads');
-  assert.equal(manifest.baseline.deprecated_requests_table, 'public.requests');
+  assert.equal(manifest.baseline.non_real_estate_requests_table, 'public.requests');
+  assert.equal(manifest.baseline.public_requests_domain, 'provider_vendor_requirements');
+  assert.equal(manifest.baseline.perseo_real_estate_usage_of_public_requests_allowed, false);
 });
 
 test('runtime certification fails closed without Railway deployment identity', () => {
