@@ -88,10 +88,16 @@ function buildReleaseManifest(env = process.env) {
       atena_production_git_sha: baseline.atena.production_git_sha,
       atena_vercel_production_deployment_id: baseline.atena.vercel_production_deployment_id,
       supabase_project_id: baseline.supabase.project_id,
+      shared_supabase_required: baseline.supabase.perseo_must_use_same_project,
+      separate_perseo_supabase_allowed: baseline.supabase.separate_perseo_supabase_allowed,
+      knowledge_base_owner: baseline.supabase.knowledge_base_owner,
       supabase_latest_migration_version: baseline.supabase.latest_migration_version,
       supabase_latest_migration_name: baseline.supabase.latest_migration_name,
       solicitud_source_of_truth: baseline.crm_contract.solicitud_source_of_truth,
-      deprecated_requests_table: baseline.crm_contract.deprecated_table,
+      non_real_estate_requests_table: baseline.crm_contract.non_real_estate_requests_table,
+      public_requests_domain: baseline.crm_contract.public_requests_domain,
+      perseo_real_estate_usage_of_public_requests_allowed:
+        baseline.crm_contract.perseo_real_estate_usage_of_public_requests_allowed,
     },
   };
 
@@ -110,8 +116,23 @@ function validateReleaseManifest(manifest, options = {}) {
   if (!clean(manifest?.baseline?.supabase_latest_migration_version)) {
     errors.push('baseline.supabase_latest_migration_missing');
   }
+  if (manifest?.baseline?.supabase_project_id !== 'pjoxytwsvbeoivppczdx') {
+    errors.push('baseline.shared_supabase_project_invalid');
+  }
+  if (manifest?.baseline?.shared_supabase_required !== true) {
+    errors.push('baseline.shared_supabase_requirement_missing');
+  }
+  if (manifest?.baseline?.separate_perseo_supabase_allowed !== false) {
+    errors.push('baseline.separate_perseo_supabase_forbidden');
+  }
   if (manifest?.baseline?.solicitud_source_of_truth !== 'public.leads') {
     errors.push('baseline.crm_source_of_truth_invalid');
+  }
+  if (manifest?.baseline?.non_real_estate_requests_table !== 'public.requests') {
+    errors.push('baseline.requests_domain_table_invalid');
+  }
+  if (manifest?.baseline?.perseo_real_estate_usage_of_public_requests_allowed !== false) {
+    errors.push('baseline.requests_real_estate_boundary_invalid');
   }
 
   if (mode === 'runtime') {
