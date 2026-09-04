@@ -11,6 +11,22 @@
 
 require('dotenv').config();
 
+// Performance V1 emergency isolation — 2026-09-03.
+// Keep the dedicated Railway worker alive but make ZERO Supabase calls while
+// the production database recovers. This affects only this worker entrypoint;
+// the PERSEO webhook service runs index.js and remains available.
+// Revert this commit after the controlled isolation test.
+const PERFORMANCE_EMERGENCY_HOLD = true;
+if (PERFORMANCE_EMERGENCY_HOLD) {
+  console.log(JSON.stringify({
+    event: 'crm_worker_performance_emergency_hold',
+    at: new Date().toISOString(),
+    reason: 'supabase_resource_exhaustion_isolation',
+  }));
+  setInterval(() => {}, 60_000);
+  return;
+}
+
 const { supabase } = require('../services/supabaseService');
 const { executeV3CrmIfEligible } = require('../conversation/v3/crm/crmExecutor');
 const {
