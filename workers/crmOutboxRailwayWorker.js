@@ -28,6 +28,9 @@ let stopping = false;
 let workerStore = null;
 let workerStoreMode = 'unknown';
 let lastIcfFollowupScanAt = 0;
+let tickInFlight = false;
+let consecutiveTickFailures = 0;
+let nextTickAllowedAt = 0;
 
 function logEvent(type, payload) {
   v3Log(type, { worker_id: workerId, ...payload });
@@ -36,6 +39,16 @@ function logEvent(type, payload) {
 function icfScanIntervalMs() {
   const configured = Number(process.env.PERSEO_ICF_FOLLOWUP_SCAN_INTERVAL_MS || 15 * 60 * 1000);
   return Math.max(60 * 1000, Math.min(configured, 60 * 60 * 1000));
+}
+
+function workerBackoffMs(failures) {
+  const pollMs = getCrmWorkerPollMs();
+  const exponent = Math.max(0, Math.min(Number(failures || 1) - 1, 6));
+  return Math.min(5 * 60 * 1000, Math.max(10 * 1000, pollMs * (2 ** exponent)));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function maybeRunIcfFollowupScan() {
@@ -68,7 +81,12 @@ async function maybeRunIcfFollowupScan() {
 }
 
 async function tick() {
-  if (stopping || !workerStore) return;
+  if (stopping || !workerStore || tickInFlight) return;
+  if (Date.now() < nextTickAllowedAt) return;
+
+  tickInFlight = true;
+  let infrastructureHealthy = false;
+
   try {
     const batch = await runCrmOutboxWorkerBatch({
       supabase,
@@ -78,14 +96,58 @@ async function tick() {
       crmDryRun: process.env.PERSEO_V3_CRM_EXECUTE !== 'true',
       logEvent,
     });
+
+    consecutiveTickFailures = 0;
+    nextTickAllowedAt = 0;
+    infrastructureHealthy = true;
+
     if (batch.claimed > 0) {
       logEvent('crm_worker_tick', { claimed: batch.claimed, processed: batch.processed, mode: batch.mode });
     }
   } catch (err) {
-    logEvent('crm_worker_tick_error', { error: String(err?.message || err) });
+    consecutiveTickFailures += 1;
+    const backoffMs = workerBackoffMs(consecutiveTickFailures);
+    nextTickAllowedAt = Date.now() + backoffMs;
+    logEvent('crm_worker_tick_error', {
+      error: String(err?.message || err),
+      consecutive_failures: consecutiveTickFailures,
+      backoff_ms: backoffMs,
+      next_attempt_at: new Date(nextTickAllowedAt).toISOString(),
+    });
   }
 
-  await maybeRunIcfFollowupScan();
+  try {
+    // The ICF scan also talks to Supabase. Do not add more DB pressure while the
+    // CRM infrastructure tick is failing or timing out.
+    if (infrastructureHealthy) await maybeRunIcfFollowupScan();
+  } finally {
+    tickInFlight = false;
+  }
+}
+
+async function bootstrapWorkerStoreWithBackoff() {
+  let failures = 0;
+
+  while (!stopping) {
+    try {
+      const boot = await bootstrapCrmWorkerStore(supabase);
+      if (boot.mode !== 'db') {
+        throw new Error(
+          `expected selectedStoreMode=db, got ${boot.mode}. memoryFallbackReason=${boot.memoryFallbackReason}`,
+        );
+      }
+      return boot;
+    } catch (err) {
+      failures += 1;
+      const backoffMs = workerBackoffMs(failures);
+      console.error(
+        `[crm-worker] bootstrap unavailable; retrying in ${backoffMs}ms: ${String(err?.message || err)}`,
+      );
+      await sleep(backoffMs);
+    }
+  }
+
+  return null;
 }
 
 async function main() {
@@ -96,7 +158,16 @@ async function main() {
     process.exit(1);
   }
 
-  const boot = await bootstrapCrmWorkerStore(supabase);
+  const shutdown = () => {
+    stopping = true;
+    console.log('[crm-worker] shutdown requested');
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+
+  const boot = await bootstrapWorkerStoreWithBackoff();
+  if (!boot || stopping) return;
+
   workerStore = boot.store;
   workerStoreMode = boot.mode;
 
@@ -105,16 +176,11 @@ async function main() {
       event: 'crm_worker_startup',
       worker_id: workerId,
       icf_followup_scan_interval_ms: icfScanIntervalMs(),
+      single_flight: true,
+      infrastructure_backoff: true,
       ...boot.diagnostics,
     }),
   );
-
-  if (workerStoreMode !== 'db') {
-    console.error(
-      `[crm-worker] FATAL: expected selectedStoreMode=db, got ${workerStoreMode}. memoryFallbackReason=${boot.memoryFallbackReason}`,
-    );
-    process.exit(1);
-  }
 
   const pollMs = getCrmWorkerPollMs();
   console.log(`[crm-worker] ready worker_id=${workerId} poll_ms=${pollMs} selectedStoreMode=${workerStoreMode}`);
@@ -125,14 +191,12 @@ async function main() {
 
   void tick();
 
-  const shutdown = () => {
-    stopping = true;
+  const stopInterval = () => {
     clearInterval(interval);
-    console.log('[crm-worker] shutdown');
-    process.exit(0);
+    if (!tickInFlight) process.exit(0);
   };
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
+  process.once('SIGTERM', stopInterval);
+  process.once('SIGINT', stopInterval);
 }
 
 main().catch((err) => {
